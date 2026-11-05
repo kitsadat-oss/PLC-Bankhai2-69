@@ -1,0 +1,6 @@
+{
+  "name": "ระบบบันทึกกิจกรรม PLC โรงเรียนบ้านค่าย",
+  "description": "ระบบส่งงานและตรวจงานพร้อมให้คะแนน บันทึกกิจกรรมชุมชนแห่งการเรียนรู้ทางวิชาชีพ โรงเรียนบ้านค่าย ภาคเรียนที่ 2 ปีการศึกษา 2569",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

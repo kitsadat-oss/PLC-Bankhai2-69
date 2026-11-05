@@ -1,0 +1,457 @@
+import React, { useState } from 'react';
+import confetti from 'canvas-confetti';
+import {
+  FileUp,
+  User,
+  Users,
+  Lightbulb,
+  BookOpen,
+  Calendar,
+  Paperclip,
+  FileText,
+  AlertCircle,
+  CheckCircle2,
+  Send,
+  Trash2,
+} from 'lucide-react';
+import { LearningSubject, PLCSubmission } from '../types/plc';
+import { addSubmission } from '../services/storage';
+import { TabKey } from './Navbar';
+
+const SUBJECT_OPTIONS: LearningSubject[] = [
+  'คณิตศาสตร์',
+  'วิทยาศาสตร์และเทคโนโลยี',
+  'วิทยาศาสตร์และเทคโนโลยี(คอมพิวเตอร์)',
+  'สังคมศึกษา',
+  'แนะแนว',
+  'ภาษาต่างประเทศ',
+  'ภาษาไทย',
+  'ศิลปะ',
+  'สุขศึกษาและพละศึกษา',
+  'การงานอาชีพ',
+];
+
+interface SubmitTabProps {
+  onSuccess: () => void;
+  onNavigate: (tab: TabKey) => void;
+}
+
+export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) => {
+  const [modelTeacher, setModelTeacher] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [lsTopic, setLsTopic] = useState('');
+  const [subjectGroup, setSubjectGroup] = useState<LearningSubject>('คณิตศาสตร์');
+  const [notes, setNotes] = useState('');
+
+  // File upload state
+  const [selectedFile, setSelectedFile] = useState<{
+    name: string;
+    size: string;
+    type: string;
+    dataUrl?: string;
+  } | null>(null);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittedData, setSubmittedData] = useState<PLCSubmission | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Format Current Date & Time in Thai format
+  const getThaiDateTime = () => {
+    const now = new Date();
+    const thaiYear = now.getFullYear() + 543;
+    const months = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
+    const day = now.getDate();
+    const month = months[now.getMonth()];
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${day} ${month} ${thaiYear} เวลา ${hours}:${minutes}:${seconds} น.`;
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeInMB = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      setSelectedFile({
+        name: file.name,
+        size: sizeInMB,
+        type: file.type,
+        dataUrl: event.target?.result as string,
+      });
+    };
+
+    if (file.size < 10 * 1024 * 1024) {
+      reader.readAsDataURL(file);
+    } else {
+      setSelectedFile({
+        name: file.name,
+        size: sizeInMB,
+        type: file.type,
+      });
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      const sizeInMB = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+      setSelectedFile({
+        name: file.name,
+        size: sizeInMB,
+        type: file.type,
+      });
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (!modelTeacher.trim()) {
+      setErrorMessage('กรุณาระบุ ชื่อ-นามสกุล ผู้ส่งงาน (Model Teacher)');
+      return;
+    }
+    if (!groupName.trim()) {
+      setErrorMessage('กรุณาระบุ ชื่อกลุ่ม');
+      return;
+    }
+    if (!lsTopic.trim()) {
+      setErrorMessage('กรุณาระบุ หัวข้อ LS (ประเด็นท้าทาย/ปัญหาที่กลุ่ม PLC กำหนดร่วมกัน)');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const submission = addSubmission({
+        modelTeacher: modelTeacher.trim(),
+        groupName: groupName.trim(),
+        lsTopic: lsTopic.trim(),
+        subjectGroup,
+        submittedAt: getThaiDateTime(),
+        fileName: selectedFile?.name || 'ไม่มีไฟล์แนบ',
+        fileSize: selectedFile?.size || '-',
+        fileUrl: selectedFile?.dataUrl || '',
+        fileType: selectedFile?.type || '',
+        notes: notes.trim(),
+        status: 'รอตรวจ',
+      });
+
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#0284c7', '#38bdf8', '#34d399', '#f43f5e', '#a855f7'],
+      });
+
+      setSubmittedData(submission);
+      onSuccess();
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    setModelTeacher('');
+    setGroupName('');
+    setLsTopic('');
+    setSubjectGroup('คณิตศาสตร์');
+    setNotes('');
+    setSelectedFile(null);
+    setSubmittedData(null);
+    setErrorMessage('');
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+      {/* Header Banner */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-sky-900/5 border border-sky-100 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl bg-sky-500 text-white flex items-center justify-center shadow-lg shadow-sky-500/30 shrink-0">
+          <FileUp className="w-7 h-7" />
+        </div>
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold border border-sky-200 mb-1">
+            <span>แบบฟอร์มส่งงาน</span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
+            ส่งบันทึกกิจกรรม PLC โรงเรียนบ้านค่าย
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500">
+            ภาคเรียนที่ 2 ปีการศึกษา 2569 • บันทึกข้อมูลเข้าสู่ระบบ
+          </p>
+        </div>
+      </div>
+
+      {/* Success Modal / Banner */}
+      {submittedData ? (
+        <div className="bg-white rounded-3xl p-8 shadow-2xl border-2 border-emerald-300 animate-scaleUp text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center shadow-inner">
+            <CheckCircle2 className="w-12 h-12 animate-bounce" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="inline-block px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full text-xs font-bold border border-emerald-200">
+              บันทึกสำเร็จเรียบร้อยแล้ว
+            </span>
+            <h3 className="text-2xl font-extrabold text-slate-800">
+              ส่งบันทึกกิจกรรม PLC สำเร็จ!
+            </h3>
+            <p className="text-sm text-slate-600 max-w-lg mx-auto">
+              รหัสอ้างอิง: <span className="font-mono font-bold text-sky-600">{submittedData.id}</span> •
+              ผู้ส่ง: <span className="font-semibold">{submittedData.modelTeacher}</span> • กลุ่ม:{' '}
+              <span className="font-semibold">{submittedData.groupName}</span>
+            </p>
+          </div>
+
+          {/* Details summary */}
+          <div className="bg-sky-50/70 border border-sky-100 rounded-2xl p-5 text-left text-xs sm:text-sm space-y-2 max-w-xl mx-auto">
+            <div className="flex justify-between">
+              <span className="text-slate-500">ประเด็นท้าทาย (LS Topic):</span>
+              <span className="font-medium text-slate-800 text-right max-w-xs truncate">
+                {submittedData.lsTopic}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">กลุ่มสาระการเรียนรู้:</span>
+              <span className="font-medium text-slate-800">{submittedData.subjectGroup}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">ประทับเวลาส่งงาน:</span>
+              <span className="font-mono text-slate-700">{submittedData.submittedAt}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">ไฟล์แนบ:</span>
+              <span className="font-medium text-blue-700">{submittedData.fileName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">สถานะเริ่มต้น:</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-xs">
+                รอตรวจ
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 border-t border-slate-100">
+            <button
+              onClick={() => onNavigate('status')}
+              className="w-full sm:w-auto px-6 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-semibold text-sm rounded-xl shadow-md transition"
+            >
+              ไปยังหน้าตรวจสอบสถานะ
+            </button>
+            <button
+              onClick={handleResetForm}
+              className="w-full sm:w-auto px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm rounded-xl transition"
+            >
+              ส่งผลงานรายการใหม่
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* The Main Submission Form */
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white rounded-3xl p-6 sm:p-9 shadow-xl shadow-sky-900/5 border border-sky-100 space-y-6"
+        >
+          {errorMessage && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-3 text-sm animate-shake">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* 1. Model Teacher Name */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <User className="w-4 h-4 text-sky-600" />
+              <span>ชื่อ-นามสกุล ผู้ส่งงาน (Model Teacher) <span className="text-rose-500">*</span></span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="เช่น นายสมชาย มีสุข หรือ ครูสมศรี ใจดี"
+              value={modelTeacher}
+              onChange={(e) => setModelTeacher(e.target.value)}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-100 outline-none transition text-slate-800 text-sm font-medium"
+            />
+          </div>
+
+          {/* 2. Group Name */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Users className="w-4 h-4 text-sky-600" />
+              <span>ชื่อกลุ่ม PLC <span className="text-rose-500">*</span></span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="เช่น กลุ่มก้าวหน้าคณิตคิดเร็ว, กลุ่มวิทย์คิดสร้างสรรค์"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-100 outline-none transition text-slate-800 text-sm font-medium"
+            />
+          </div>
+
+          {/* 3. LS Topic */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-amber-500" />
+              <span>หัวข้อ LS (ประเด็นท้าทาย/ปัญหาที่กลุ่ม PLC กำหนดร่วมกัน) <span className="text-rose-500">*</span></span>
+            </label>
+            <textarea
+              required
+              rows={3}
+              placeholder="ระบุประเด็นปัญหา นวัตกรรมการจัดการเรียนรู้ หรือประเด็นท้าทายที่กลุ่มร่วมกันพัฒนา เช่น การพัฒนาทักษะการอ่านจับใจความด้วยเทคนิคบันได 6 ขั้น..."
+              value={lsTopic}
+              onChange={(e) => setLsTopic(e.target.value)}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-100 outline-none transition text-slate-800 text-sm leading-relaxed"
+            />
+          </div>
+
+          {/* 4. Subject Group (10 options) */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-emerald-600" />
+              <span>กลุ่มสาระการเรียนรู้ (10 กลุ่มสาระ) <span className="text-rose-500">*</span></span>
+            </label>
+            <select
+              value={subjectGroup}
+              onChange={(e) => setSubjectGroup(e.target.value as LearningSubject)}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-100 outline-none transition text-slate-800 text-sm font-medium cursor-pointer"
+            >
+              {SUBJECT_OPTIONS.map((sub) => (
+                <option key={sub} value={sub}>
+                  {sub}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 5. Submission Timestamp */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-sky-600" />
+              <span>วันที่ส่งงาน (ประทับวันและเวลาอัตโนมัติ)</span>
+            </label>
+            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-sky-100 bg-sky-50/60 text-slate-700 text-sm">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+              <span className="font-mono font-semibold text-sky-800">{getThaiDateTime()}</span>
+              <span className="text-xs text-slate-500 ml-auto">(ระบบจะประทับเวลาขณะกดบันทึกจริง)</span>
+            </div>
+          </div>
+
+          {/* 6. File Attachment */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Paperclip className="w-4 h-4 text-sky-600" />
+              <span>แนบไฟล์งาน (รายงานสรุป / แผนการสอน / ภาพกิจกรรม)</span>
+            </label>
+
+            {selectedFile ? (
+              <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 text-sm truncate">{selectedFile.name}</p>
+                    <p className="text-xs text-slate-500">{selectedFile.size}</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedFile(null)}
+                  className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition"
+                  title="ลบไฟล์"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                className="relative border-2 border-dashed border-sky-200 hover:border-sky-400 bg-sky-50/30 rounded-2xl p-6 text-center transition group cursor-pointer"
+              >
+                <input
+                  type="file"
+                  id="file-upload"
+                  onChange={handleFileChange}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,.jpg,.jpeg,.png"
+                />
+                <div className="flex flex-col items-center pointer-events-none">
+                  <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center mb-2 group-hover:scale-110 transition">
+                    <FileUp className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700">
+                    คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    รองรับไฟล์ PDF, Word (.docx), PowerPoint (.pptx), ZIP หรือรูปภาพ
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 7. Additional Notes */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-slate-500" />
+              <span>หมายเหตุเพิ่มเติม (ถ้ามี)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="เช่น มีการปรับปรุงแผนเพิ่มเติม หรือข้อมูลเพิ่มเติมสำหรับการตรวจสอบ"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-100 outline-none transition text-slate-800 text-sm font-medium"
+            />
+          </div>
+
+          {/* Bottom Submit Button */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="px-6 py-3.5 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition"
+            >
+              ล้างข้อมูล
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex items-center justify-center gap-3 px-10 py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-extrabold text-base shadow-lg shadow-sky-500/30 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+            >
+              <Send className="w-5 h-5" />
+              <span>{isSubmitting ? 'กำลังบันทึกข้อมูล...' : 'บันทึกข้อมูล'}</span>
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+};
