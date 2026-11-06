@@ -1,7 +1,7 @@
 import { PLCSubmission, SubmissionStatus } from '../types/plc';
 import { INITIAL_SUBMISSIONS } from '../data/initialData';
 
-const STORAGE_KEY = 'bankhai_plc_submissions_v2569_final';
+const STORAGE_KEY = 'bankhai_plc_submissions_v2569_prod';
 const WEBHOOK_URL_KEY = 'bankhai_plc_webhook';
 
 export const GOOGLE_SHEET_URL =
@@ -14,20 +14,35 @@ export const GOOGLE_DRIVE_FOLDER_URL =
 
 export function getSubmissions(): PLCSubmission[] {
   try {
+    // ล้างคีย์ข้อมูลตัวอย่างเดิมเพื่อความสะอาดสำหรับใช้งานจริง
+    if (localStorage.getItem('bankhai_plc_submissions_v2569_final')) {
+      localStorage.removeItem('bankhai_plc_submissions_v2569_final');
+    }
+
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_SUBMISSIONS));
-      return INITIAL_SUBMISSIONS;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_SUBMISSIONS));
-      return INITIAL_SUBMISSIONS;
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      return [];
     }
+
+    // กรองข้อมูลตัวอย่างเดิมออกหากยังมีตกค้าง
+    const filtered = parsed.filter(
+      (item) => item.modelTeacher !== 'ครูสมชาย มีสุข' && item.modelTeacher !== 'ครูณิชารัตน์ เจริญพร'
+    );
+    if (filtered.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+      return filtered;
+    }
+
     return parsed;
   } catch (error) {
     console.error('Error reading submissions from localStorage:', error);
-    return INITIAL_SUBMISSIONS;
+    return [];
   }
 }
 
@@ -39,9 +54,24 @@ export function saveSubmissions(list: PLCSubmission[]): void {
   }
 }
 
+export function clearAllSubmissions(): PLCSubmission[] {
+  saveSubmissions([]);
+  return [];
+}
+
 export function addSubmission(newSub: Omit<PLCSubmission, 'id' | 'status'> & { status?: SubmissionStatus }): PLCSubmission {
   const current = getSubmissions();
-  const nextNumber = current.length + 1;
+  
+  // คำนวณเลขรหัสส่งงานอัตโนมัติจากเลขสูงสุดที่มีอยู่
+  let maxNum = 0;
+  current.forEach((item) => {
+    const match = item.id.match(/PLC-2569-(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  const nextNumber = maxNum + 1;
   const id = `PLC-2569-${String(nextNumber).padStart(3, '0')}`;
 
   const submission: PLCSubmission = {
@@ -83,8 +113,8 @@ export function deleteSubmission(id: string): boolean {
 }
 
 export function resetToSampleData(): PLCSubmission[] {
-  saveSubmissions(INITIAL_SUBMISSIONS);
-  return INITIAL_SUBMISSIONS;
+  saveSubmissions([]);
+  return [];
 }
 
 export interface UrlValidationResult {

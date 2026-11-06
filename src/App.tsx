@@ -14,9 +14,9 @@ import { AdminPasswordModal } from './components/AdminPasswordModal';
 import { PLCSubmission } from './types/plc';
 import {
   getSubmissions,
-  resetToSampleData,
+  clearAllSubmissions,
 } from './services/storage';
-import { RefreshCw } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
@@ -58,10 +58,10 @@ export default function App() {
     setActiveTab('home');
   };
 
-  const handleResetData = () => {
-    if (window.confirm('คุณต้องการรีเซ็ตข้อมูลตัวอย่างทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่?')) {
-      const reset = resetToSampleData();
-      setSubmissions(reset);
+  const handleClearData = () => {
+    if (window.confirm('คุณต้องการล้างข้อมูลบันทึกทั้งหมดในเครื่องเพื่อเริ่มต้นใช้งานจริงหรือไม่?')) {
+      const cleared = clearAllSubmissions();
+      setSubmissions(cleared);
     }
   };
 
@@ -133,12 +133,12 @@ export default function App() {
 
           <div className="flex items-center gap-4 text-xs font-medium">
             <button
-              onClick={handleResetData}
-              className="text-slate-400 hover:text-slate-600 flex items-center gap-1 cursor-pointer transition"
-              title="รีเซ็ตข้อมูลตัวอย่างเริ่มต้น"
+              onClick={handleClearData}
+              className="text-slate-400 hover:text-rose-600 flex items-center gap-1.5 cursor-pointer transition"
+              title="ล้างข้อมูลในระบบเพื่อเตรียมพร้อมใช้งานจริง"
             >
-              <RefreshCw className="w-3 h-3" />
-              <span>รีเซ็ตข้อมูลตัวอย่าง</span>
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>ล้างข้อมูลในระบบ</span>
             </button>
           </div>
         </div>

@@ -271,7 +271,17 @@ export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
           <span>คลิกที่รายการเพื่อดูรายละเอียดผลการตรวจและข้อเสนอแนะ</span>
         </div>
 
-        {filteredSubmissions.length === 0 ? (
+        {submissions.length === 0 ? (
+          <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-sky-200 space-y-3">
+            <div className="w-16 h-16 rounded-full bg-sky-50 text-sky-500 mx-auto flex items-center justify-center">
+              <FileText className="w-8 h-8 opacity-70" />
+            </div>
+            <h4 className="text-base font-bold text-slate-800">พร้อมใช้งานจริง: ยังไม่มีรายการส่งบันทึกกิจกรรม PLC</h4>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              ข้อมูลตัวอย่างถูกล้างเรียบร้อยแล้ว เมื่อครูผู้สอนเริ่มส่งบันทึกกิจกรรมผ่านเมนู "ส่งงาน" ข้อมูลจะปรากฏที่นี่ทันที
+            </p>
+          </div>
+        ) : filteredSubmissions.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-sky-200 space-y-3">
             <div className="w-16 h-16 rounded-full bg-sky-50 text-sky-500 mx-auto flex items-center justify-center">
               <FileText className="w-8 h-8 opacity-60" />
