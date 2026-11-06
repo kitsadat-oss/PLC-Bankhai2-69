@@ -3,6 +3,7 @@ import { PLCSubmission } from '../types/plc';
 export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   {
     id: 'PLC-2569-001',
+    cycle: 'วงรอบที่ 1',
     modelTeacher: 'ครูสมชาย มีสุข',
     groupName: 'กลุ่มก้าวหน้าคณิตคิดเร็ว',
     lsTopic: 'การพัฒนาทักษะการแก้โจทย์ปัญหาคณิตศาสตร์ เรื่อง พีชคณิต โดยใช้เทคนิคการจัดการเรียนรู้แบบ Active Learning',
@@ -20,6 +21,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-002',
+    cycle: 'วงรอบที่ 1',
     modelTeacher: 'ครูณิชารัตน์ เจริญพร',
     groupName: 'PLC ภาษาไทยเพื่อการสื่อสาร',
     lsTopic: 'การยกระดับทักษะการอ่านจับใจความสำคัญของนักเรียน ม.3 ด้วยเทคนิคบันได 6 ขั้นและสื่อประสม',
@@ -37,6 +39,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-003',
+    cycle: 'วงรอบที่ 2',
     modelTeacher: 'ครูอนุชา รัตนเวช',
     groupName: 'Sci-Inno นวัตกรรมวิทย์ค่าย',
     lsTopic: 'การจัดการเรียนรู้แบบสืบเสาะหาความรู้ (5E) ร่วมกับการทดลองเสมือนจริงเพื่อแก้ปัญหาความเข้าใจมโนทัศน์เรื่องเซลล์พืชและเซลล์สัตว์',
@@ -52,6 +55,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-004',
+    cycle: 'วงรอบที่ 2',
     modelTeacher: 'ครูศิริพร บุญเลิศ',
     groupName: 'CodeCraft Coding Club',
     lsTopic: 'การพัฒนาแนวคิดเชิงคำนวณ (Computational Thinking) ผ่านการเขียนโปรแกรมภาษา Python ด้วยเกมจำลองสถานการณ์',
@@ -67,6 +71,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-005',
+    cycle: 'วงรอบที่ 3',
     modelTeacher: 'ครูกิตติพงษ์ วัฒนศิริ',
     groupName: 'พลเมืองดีบ้านค่าย',
     lsTopic: 'การจัดกิจกรรมการเรียนรู้ประวัติศาสตร์ท้องถิ่นระยองแบบมีปฏิสัมพันธ์เพื่อส่งเสริมความภาคภูมิใจในถิ่นกำเนิด',
@@ -84,6 +89,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-006',
+    cycle: 'วงรอบที่ 3',
     modelTeacher: 'ครูพิมพา สุวรรณโชติ',
     groupName: 'English For Global Communication',
     lsTopic: 'การพัฒนาความมั่นใจในการพูดภาษาอังกฤษในชีวิตประจำวันผ่านบทบาทสมมติ (Role Play) และเทคโนโลยี AI พูดคุย',
@@ -101,6 +107,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-007',
+    cycle: 'วงรอบที่ 4',
     modelTeacher: 'ครูประสิทธิ์ ใจมั่น',
     groupName: 'ศิลปะสร้างสรรค์งานศิลป์',
     lsTopic: 'การประยุกต์ใช้วัสดุธรรมชาติในท้องถิ่นระยองเพื่อสร้างสรรค์งานประติมากรรมสื่อผสมในระดับมัธยมศึกษาตอนปลาย',
@@ -116,6 +123,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-008',
+    cycle: 'วงรอบที่ 4',
     modelTeacher: 'ครูวีรชัย แสนสุข',
     groupName: 'สุขภาพดี ชีวีมีสุข ค่ายสปอร์ต',
     lsTopic: 'การเสริมสร้างสมรรถภาพทางกายด้วยตารางฝึกแบบวงจร (Circuit Training) เพื่อลดภาวะโภชนาการเกินในนักเรียนชั้น ม.2',
@@ -131,6 +139,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-009',
+    cycle: 'วงรอบที่ 1',
     modelTeacher: 'ครูอภิญญา เกษตรก้าวหน้า',
     groupName: 'เกษตรกรรมยุคใหม่ บ้านค่ายโมเดล',
     lsTopic: 'การเพาะปลูกพืชไฮโดรโปนิกส์พลังงานแสงอาทิตย์เพื่อการประกอบอาชีพในศตวรรษที่ 21',
@@ -148,6 +157,7 @@ export const INITIAL_SUBMISSIONS: PLCSubmission[] = [
   },
   {
     id: 'PLC-2569-010',
+    cycle: 'วงรอบที่ 2',
     modelTeacher: 'ครูประภาส ชูใจ',
     groupName: 'เส้นทางสู่อนาคต แนะแนวบ้านค่าย',
     lsTopic: 'การออกแบบกระบวนการแนะแนวเพื่อค้นหาตัวตนและการวางแผนศึกษาต่อในระดับอุดมศึกษาด้วย Portfolio Workshop',

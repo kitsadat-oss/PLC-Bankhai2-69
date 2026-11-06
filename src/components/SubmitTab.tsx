@@ -13,9 +13,22 @@ import {
   CheckCircle2,
   Send,
   Trash2,
+  ExternalLink,
+  FolderUp,
+  RefreshCw,
+  Settings,
+  Link2,
+  RotateCcw,
 } from 'lucide-react';
-import { LearningSubject, PLCSubmission } from '../types/plc';
-import { addSubmission } from '../services/storage';
+import { LearningSubject, PLCSubmission, PLCCycle, PLC_CYCLES } from '../types/plc';
+import {
+  addSubmission,
+  sendSubmissionToGoogleSheet,
+  GOOGLE_DRIVE_FOLDER_URL,
+  getWebhookUrl,
+  setWebhookUrl,
+  validateWebhookUrl,
+} from '../services/storage';
 import { TabKey } from './Navbar';
 
 const SUBJECT_OPTIONS: LearningSubject[] = [
@@ -39,6 +52,7 @@ interface SubmitTabProps {
 export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) => {
   const [modelTeacher, setModelTeacher] = useState('');
   const [groupName, setGroupName] = useState('');
+  const [cycle, setCycle] = useState<PLCCycle>('วงรอบที่ 1');
   const [lsTopic, setLsTopic] = useState('');
   const [subjectGroup, setSubjectGroup] = useState<LearningSubject>('คณิตศาสตร์');
   const [notes, setNotes] = useState('');
@@ -54,6 +68,10 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedData, setSubmittedData] = useState<PLCSubmission | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [webhookUrl, setWebhookState] = useState(getWebhookUrl());
+  const [showUrlConfig, setShowUrlConfig] = useState(false);
+  const [urlInputValue, setUrlInputValue] = useState(getWebhookUrl());
+  const [syncNotice, setSyncNotice] = useState<string>('');
 
   // Format Current Date & Time in Thai format
   const getThaiDateTime = () => {
@@ -92,20 +110,12 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
       setSelectedFile({
         name: file.name,
         size: sizeInMB,
-        type: file.type,
+        type: file.type || 'application/octet-stream',
         dataUrl: event.target?.result as string,
       });
     };
 
-    if (file.size < 10 * 1024 * 1024) {
-      reader.readAsDataURL(file);
-    } else {
-      setSelectedFile({
-        name: file.name,
-        size: sizeInMB,
-        type: file.type,
-      });
-    }
+    reader.readAsDataURL(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -113,15 +123,20 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
     const file = e.dataTransfer.files?.[0];
     if (file) {
       const sizeInMB = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
-      setSelectedFile({
-        name: file.name,
-        size: sizeInMB,
-        type: file.type,
-      });
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedFile({
+          name: file.name,
+          size: sizeInMB,
+          type: file.type || 'application/octet-stream',
+          dataUrl: event.target?.result as string,
+        });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -144,16 +159,35 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
       const submission = addSubmission({
         modelTeacher: modelTeacher.trim(),
         groupName: groupName.trim(),
+        cycle,
         lsTopic: lsTopic.trim(),
         subjectGroup,
         submittedAt: getThaiDateTime(),
         fileName: selectedFile?.name || 'ไม่มีไฟล์แนบ',
         fileSize: selectedFile?.size || '-',
-        fileUrl: selectedFile?.dataUrl || '',
+        fileUrl: selectedFile ? GOOGLE_DRIVE_FOLDER_URL : '',
         fileType: selectedFile?.type || '',
+        fileData: selectedFile?.dataUrl || '',
         notes: notes.trim(),
         status: 'รอตรวจ',
       });
+
+      // ส่งข้อมูลไปยัง Google Sheet และอัปโหลดไฟล์เข้า Google Drive อัตโนมัติ
+      try {
+        const syncResult = await sendSubmissionToGoogleSheet(submission);
+        if (syncResult && syncResult.fileUrl) {
+          submission.fileUrl = syncResult.fileUrl;
+        }
+        if (syncResult && syncResult.error) {
+          setSyncNotice(syncResult.error);
+        } else if (!getWebhookUrl()) {
+          setSyncNotice('ยังไม่ได้ระบุ Web App URL: ข้อมูลและไฟล์ถูกบันทึกไว้ในเครื่องนี้เท่านั้น กรุณาระบุ Web App URL เพื่อให้อัปโหลดเข้า Google Drive และ Sheet อัตโนมัติ');
+        } else {
+          setSyncNotice('');
+        }
+      } catch (syncErr: any) {
+        setSyncNotice('ไม่สามารถเชื่อมต่อ Google Apps Script ได้: ' + (syncErr?.message || ''));
+      }
 
       confetti({
         particleCount: 80,
@@ -175,12 +209,14 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
   const handleResetForm = () => {
     setModelTeacher('');
     setGroupName('');
+    setCycle('วงรอบที่ 1');
     setLsTopic('');
     setSubjectGroup('คณิตศาสตร์');
     setNotes('');
     setSelectedFile(null);
     setSubmittedData(null);
     setErrorMessage('');
+    setSyncNotice('');
   };
 
   return (
@@ -201,6 +237,98 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
             ภาคเรียนที่ 2 ปีการศึกษา 2569 • บันทึกข้อมูลเข้าสู่ระบบ
           </p>
         </div>
+      </div>
+
+      {/* Google Drive & Sheet Connection Status Box */}
+      <div className={`p-4 rounded-3xl border transition-all ${
+        webhookUrl
+          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+          : 'bg-amber-50/90 border-amber-300 text-amber-950'
+      }`}>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className={`w-3.5 h-3.5 rounded-full shrink-0 shadow-sm ${
+              webhookUrl ? 'bg-emerald-500 animate-pulse ring-4 ring-emerald-200' : 'bg-amber-500 ring-4 ring-amber-200'
+            }`} />
+            <div>
+              <p className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
+                <span>{webhookUrl ? 'เชื่อมต่อ Google Drive & Sheet เรียบร้อย' : '⚠️ ยังไม่ได้ระบุ Web App URL สำหรับส่งเข้า Google Drive'}</span>
+              </p>
+              <p className="text-[11px] text-slate-600">
+                {webhookUrl
+                  ? 'ไฟล์แนบจะถูกอัปโหลดเข้าโฟลเดอร์ Google Drive และนำลิงก์บันทึกลง Google Sheet อัตโนมัติเมื่อกดบันทึก'
+                  : 'หากต้องการให้อัปโหลดไฟล์เข้าโฟลเดอร์ Google Drive (1X9O0ELOl...) อัตโนมัติ กรุณาระบุ Web App URL'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowUrlConfig(!showUrlConfig)}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs shrink-0 flex items-center gap-1.5 ${
+              webhookUrl
+                ? 'bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/25'
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>{webhookUrl ? 'ตรวจสอบ URL' : 'ระบุ Web App URL'}</span>
+          </button>
+        </div>
+
+        {/* Expandable Web App URL input */}
+        {showUrlConfig && (
+          <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-2 animate-fadeIn">
+            <label className="block text-xs font-bold text-slate-700">
+              Web App URL ของ Google Apps Script (ได้จากการกด Deploy ใน Google Sheet):
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://script.google.com/macros/s/.../exec"
+                value={urlInputValue}
+                onChange={(e) => setUrlInputValue(e.target.value)}
+                className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-mono outline-none focus:border-sky-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setWebhookUrl(urlInputValue);
+                  setWebhookState(urlInputValue.trim());
+                  setShowUrlConfig(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition"
+              >
+                บันทึก
+              </button>
+            </div>
+
+            {/* Validation warning or confirmation */}
+            {urlInputValue.trim() && (() => {
+              const validation = validateWebhookUrl(urlInputValue);
+              return (
+                <div
+                  className={`p-2 rounded-xl text-xs flex items-center gap-2 ${
+                    validation.isValid
+                      ? 'bg-emerald-100/80 text-emerald-900 border border-emerald-300'
+                      : 'bg-amber-100/90 text-amber-950 border border-amber-300'
+                  }`}
+                >
+                  {validation.isValid ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                  )}
+                  <span className="font-medium text-[11px]">{validation.message}</span>
+                </div>
+              );
+            })()}
+
+            <p className="text-[11px] text-slate-500">
+              💡 ดูโค้ดสคริปต์และขั้นตอนตั้งค่าได้ที่หน้า <b>4.ตรวจงาน</b> ➔ ปุ่ม <b>"ตั้งค่า Google Sheet / Drive"</b>
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Success Modal / Banner */}
@@ -226,6 +354,12 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
 
           {/* Details summary */}
           <div className="bg-sky-50/70 border border-sky-100 rounded-2xl p-5 text-left text-xs sm:text-sm space-y-2 max-w-xl mx-auto">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500">วงรอบที่ (PLC Cycle):</span>
+              <span className="font-bold text-sky-800 bg-sky-100 px-3 py-1 rounded-full text-xs border border-sky-200">
+                {submittedData.cycle || 'วงรอบที่ 1'}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span className="text-slate-500">ประเด็นท้าทาย (LS Topic):</span>
               <span className="font-medium text-slate-800 text-right max-w-xs truncate">
@@ -240,9 +374,24 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
               <span className="text-slate-500">ประทับเวลาส่งงาน:</span>
               <span className="font-mono text-slate-700">{submittedData.submittedAt}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center">
               <span className="text-slate-500">ไฟล์แนบ:</span>
-              <span className="font-medium text-blue-700">{submittedData.fileName}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-blue-700">{submittedData.fileName}</span>
+                {submittedData.fileName && submittedData.fileName !== 'ไม่มีไฟล์แนบ' && (
+                  <a
+                    href={submittedData.fileUrl || GOOGLE_DRIVE_FOLDER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-semibold transition"
+                    title="เปิดไฟล์ใน Google Drive"
+                  >
+                    <FolderUp className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>เปิดใน Google Drive</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">สถานะเริ่มต้น:</span>
@@ -250,6 +399,13 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
                 รอตรวจ
               </span>
             </div>
+
+            {syncNotice && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs text-left">
+                <span className="font-bold block mb-0.5">⚠️ ข้อมูลการส่งเข้า Google Drive & Sheet:</span>
+                <span>{syncNotice}</span>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 border-t border-slate-100">
@@ -312,7 +468,44 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
             />
           </div>
 
-          {/* 3. LS Topic */}
+          {/* 3. PLC Cycle (วงรอบที่ 1 ถึง 4) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-sky-600" />
+                <span>วงรอบที่ (PLC Cycle) <span className="text-rose-500">*</span></span>
+              </label>
+              <span className="text-xs text-slate-500 font-medium">เลือกวงรอบการดำเนินการ (1 - 4)</span>
+            </div>
+
+            {/* Segmented Button Selection (4 Options) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {PLC_CYCLES.map((c) => {
+                const isSelected = cycle === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCycle(c)}
+                    className={`py-3 px-4 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer border ${
+                      isSelected
+                        ? 'bg-sky-500 text-white border-sky-600 shadow-md shadow-sky-500/25 ring-2 ring-sky-200'
+                        : 'bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        isSelected ? 'bg-white' : 'bg-slate-400'
+                      }`}
+                    />
+                    <span>{c}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. LS Topic */}
           <div className="space-y-2">
             <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
               <Lightbulb className="w-4 h-4 text-amber-500" />
@@ -362,10 +555,22 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
 
           {/* 6. File Attachment */}
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Paperclip className="w-4 h-4 text-sky-600" />
-              <span>แนบไฟล์งาน (รายงานสรุป / แผนการสอน / ภาพกิจกรรม)</span>
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-sky-600" />
+                <span>แนบไฟล์งาน (รายงานสรุป / แผนการสอน / ภาพกิจกรรม)</span>
+              </label>
+              <a
+                href={GOOGLE_DRIVE_FOLDER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-sky-600 hover:text-sky-800 font-semibold inline-flex items-center gap-1 hover:underline"
+                title="เปิดโฟลเดอร์ Google Drive บันทึกไฟล์แนบ"
+              >
+                <span>เปิดโฟลเดอร์ Google Drive</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
 
             {selectedFile ? (
               <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-4">
@@ -447,7 +652,11 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
               className="inline-flex items-center justify-center gap-3 px-10 py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-extrabold text-base shadow-lg shadow-sky-500/30 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
             >
               <Send className="w-5 h-5" />
-              <span>{isSubmitting ? 'กำลังบันทึกข้อมูล...' : 'บันทึกข้อมูล'}</span>
+              <span>
+                {isSubmitting
+                  ? 'กำลังบันทึกและอัปโหลดไฟล์ไปยัง Drive...'
+                  : 'บันทึกข้อมูล'}
+              </span>
             </button>
           </div>
         </form>

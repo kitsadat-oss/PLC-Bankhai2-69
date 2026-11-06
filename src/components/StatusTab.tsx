@@ -11,8 +11,10 @@ import {
   Users,
   ChevronRight,
   X,
+  ExternalLink,
 } from 'lucide-react';
 import { PLCSubmission, SubmissionStatus } from '../types/plc';
+import { GOOGLE_DRIVE_FOLDER_URL } from '../services/storage';
 
 interface StatusTabProps {
   submissions: PLCSubmission[];
@@ -298,11 +300,16 @@ export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
                 className="bg-white rounded-3xl p-5 sm:p-6 shadow-md shadow-sky-900/5 border border-sky-100 hover:border-sky-300 hover:shadow-xl hover:shadow-sky-900/10 transition-all cursor-pointer group flex flex-col justify-between"
               >
                 <div>
-                  {/* Top line: ID & Status */}
+                  {/* Top line: ID, Cycle & Status */}
                   <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="font-mono text-xs font-bold text-sky-600 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-100">
-                      {item.id}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-sky-600 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-100">
+                        {item.id}
+                      </span>
+                      <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                        {item.cycle || 'วงรอบที่ 1'}
+                      </span>
+                    </div>
                     {renderStatusBadge(item.status)}
                   </div>
 
@@ -335,6 +342,27 @@ export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
                     </span>
                     <span className="font-mono">{item.submittedAt}</span>
                   </div>
+
+                  {/* Attached file link if present */}
+                  {item.fileName && item.fileName !== 'ไม่มีไฟล์แนบ' && (
+                    <div className="mt-2.5 flex items-center justify-between text-xs bg-sky-50/50 px-2.5 py-1.5 rounded-xl border border-sky-100">
+                      <span className="text-slate-500 flex items-center gap-1">
+                        <FileText className="w-3.5 h-3.5 text-sky-500" />
+                        <span className="truncate max-w-[150px]">{item.fileName}</span>
+                      </span>
+                      <a
+                        href={item.fileUrl || GOOGLE_DRIVE_FOLDER_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sky-600 hover:text-sky-800 font-bold inline-flex items-center gap-1 hover:underline ml-2"
+                        title="เปิดใน Google Drive"
+                      >
+                        <span>Drive</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
 
                   {/* If Reviewed / Feedback preview */}
                   {item.adminFeedback && (
@@ -396,9 +424,15 @@ export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
                   <span className="text-xs text-slate-500 block">ชื่อกลุ่ม PLC</span>
                   <p className="font-bold text-slate-800">{activeModalItem.groupName}</p>
                 </div>
-                <div className="sm:col-span-2">
+                <div>
                   <span className="text-xs text-slate-500 block">กลุ่มสาระการเรียนรู้</span>
                   <p className="font-bold text-slate-800">{activeModalItem.subjectGroup}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500 block">วงรอบที่ (PLC Cycle)</span>
+                  <span className="font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-md border border-amber-200 text-xs inline-block mt-0.5">
+                    {activeModalItem.cycle || 'วงรอบที่ 1'}
+                  </span>
                 </div>
               </div>
 
@@ -425,16 +459,27 @@ export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
               {/* File Attachment Box */}
               <div>
                 <span className="text-xs text-slate-500 block mb-1">เอกสารหลักฐานแนบ</span>
-                <div className="p-3.5 rounded-2xl border border-sky-200 bg-sky-50/70 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="p-3.5 rounded-2xl border border-sky-200 bg-sky-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <FileText className="w-5 h-5 text-sky-600 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-slate-800 text-xs sm:text-sm">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 text-xs sm:text-sm truncate">
                         {activeModalItem.fileName || 'ไม่มีไฟล์แนบ'}
                       </p>
                       <p className="text-[11px] text-slate-500">{activeModalItem.fileSize || '-'}</p>
                     </div>
                   </div>
+                  {activeModalItem.fileName && activeModalItem.fileName !== 'ไม่มีไฟล์แนบ' && (
+                    <a
+                      href={activeModalItem.fileUrl || GOOGLE_DRIVE_FOLDER_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-semibold shadow-sm transition shrink-0"
+                    >
+                      <span>เปิดใน Google Drive</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
                 </div>
               </div>
 

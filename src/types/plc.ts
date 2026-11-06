@@ -6,6 +6,15 @@ export type SubmissionStatus = 'รอตรวจ' | 'ตรวจแล้ว'
 
 export type AdminActionStatus = 'รอตรวจ' | 'ตรวจแล้ว' | 'ส่งใหม่' | 'ลบ';
 
+export type PLCCycle = 'วงรอบที่ 1' | 'วงรอบที่ 2' | 'วงรอบที่ 3' | 'วงรอบที่ 4';
+
+export const PLC_CYCLES: PLCCycle[] = [
+  'วงรอบที่ 1',
+  'วงรอบที่ 2',
+  'วงรอบที่ 3',
+  'วงรอบที่ 4',
+];
+
 export type LearningSubject =
   | 'ภาษาไทย'
   | 'คณิตศาสตร์'
@@ -20,6 +29,7 @@ export type LearningSubject =
 
 export interface PLCSubmission {
   id: string;
+  cycle?: PLCCycle; // วงรอบที่: วงรอบที่ 1 ถึง วงรอบที่ 4
   modelTeacher: string; // ชื่อ-นามสกุล ผู้ส่งงาน (Model Teacher)
   groupName: string; // ชื่อกลุ่ม
   lsTopic: string; // หัวข้อ LS (ประเด็นท้าทาย/ปัญหาที่กลุ่ม PLC กำหนดร่วมกัน)
@@ -27,8 +37,9 @@ export interface PLCSubmission {
   submittedAt: string; // วันที่ส่งงาน (ISO string or formatted date)
   fileName?: string; // ชื่อไฟล์แนบ
   fileSize?: string; // ขนาดไฟล์
-  fileUrl?: string; // ลิงก์ไฟล์งาน หรือ data URI
+  fileUrl?: string; // ลิงก์ไฟล์งานใน Google Drive หรือ data URI
   fileType?: string;
+  fileData?: string; // ข้อมูล Base64 ของไฟล์สำหรับอัปโหลดเข้าสู่ Google Drive
   notes?: string; // หมายเหตุเพิ่มเติม
   status: SubmissionStatus; // สถานะการส่งงาน: รอตรวจ, ตรวจแล้ว, ส่งใหม่
   adminFeedback?: string; // ความคิดเห็น/คำแนะนำจากผู้ตรวจ (Admin)

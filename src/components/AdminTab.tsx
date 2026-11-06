@@ -15,9 +15,23 @@ import {
   Square,
   LogOut,
   MessageSquare,
+  ExternalLink,
+  Copy,
+  Check,
+  Database,
+  FolderOpen,
 } from 'lucide-react';
 import { AdminActionStatus, PLCSubmission } from '../types/plc';
-import { saveSubmissions, exportToCSV } from '../services/storage';
+import {
+  saveSubmissions,
+  exportToCSV,
+  GOOGLE_SHEET_URL,
+  GOOGLE_DRIVE_FOLDER_URL,
+  copyForGoogleSheet,
+  syncAllToGoogleSheet,
+  getWebhookUrl,
+} from '../services/storage';
+import { GoogleSheetSyncModal } from './GoogleSheetSyncModal';
 
 interface AdminTabProps {
   submissions: PLCSubmission[];
@@ -56,6 +70,19 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+
+  const handleCopyReviewedData = async () => {
+    const reviewedItems = submissions.filter((s) => s.status === 'ตรวจแล้ว');
+    const success = await copyForGoogleSheet(reviewedItems);
+    if (success) {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 3000);
+    } else {
+      alert('ไม่สามารถคัดลอกข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
 
   // Draft edits keyed by submission ID
   const [drafts, setDrafts] = useState<Record<string, DraftReview>>({});
@@ -213,6 +240,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
       }
 
       saveSubmissions(updatedList);
+      syncAllToGoogleSheet(updatedList); // Push real-time to Google Sheet database
       onUpdate();
 
       confetti({
@@ -262,8 +290,45 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           </div>
         </div>
 
-        {/* Admin Tools: Export to CSV & Logout */}
+        {/* Admin Tools: Google Sheet, Database Setup, Export to CSV & Logout */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsSyncModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold transition shadow-xs"
+            title="ตั้งค่าเชื่อมต่อ Google Sheet เป็นฐานข้อมูล Live Database"
+          >
+            <Database className="w-4 h-4 text-teal-600" />
+            <span>เชื่อมต่อ Sheet ฐานข้อมูล</span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                getWebhookUrl() ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+          </button>
+
+          <a
+            href={GOOGLE_SHEET_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/25 transition hover:scale-105 active:scale-95"
+            title="เปิด Google Sheet บันทึกข้อมูลงานที่ตรวจแล้ว"
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>Google Sheet (ข้อมูลงานที่ตรวจแล้ว)</span>
+          </a>
+
+          <a
+            href={GOOGLE_DRIVE_FOLDER_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-semibold transition"
+            title="เปิดโฟลเดอร์ Google Drive รวมไฟล์แนบของโรงเรียนบ้านค่าย"
+          >
+            <FolderOpen className="w-4 h-4 text-sky-600" />
+            <span>โฟลเดอร์ Google Drive</span>
+          </a>
+
           <button
             onClick={() => exportToCSV(submissions)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition"
@@ -423,6 +488,48 @@ export const AdminTab: React.FC<AdminTabProps> = ({
         </div>
       </div>
 
+      {/* Google Sheet Sync Banner for Reviewed Items */}
+      {viewMode === 'history' && (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 rounded-3xl p-6 border border-emerald-200/80 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <h3 className="font-bold text-slate-800 text-base">
+                ลิงก์ข้อมูลงานที่ตรวจแล้วไปยัง Google Sheet โรงเรียนบ้านค่าย
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600">
+              ท่านสามารถคลิกเพื่อเปิด Google Sheet หรือคัดลอกข้อมูลรายการที่ตรวจแล้ว ({reviewedCount} รายการ) ไปวางในตารางได้ทันที
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyReviewedData}
+              className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-xs ${
+                isCopied
+                  ? 'bg-emerald-700 text-white'
+                  : 'bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300'
+              }`}
+            >
+              {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+              <span>{isCopied ? 'คัดลอกเรียบร้อยแล้ว!' : 'คัดลอกข้อมูลไปวางใน Sheet'}</span>
+            </button>
+
+            <a
+              href={GOOGLE_SHEET_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition hover:scale-105 active:scale-95"
+            >
+              <ExternalLink className="w-4 h-4" />
+              <span>เปิด Google Sheet</span>
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Main Review Queue / Cards Grouped by Subject */}
       {displayedSubmissions.length === 0 ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-sky-200 space-y-3">
@@ -503,6 +610,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                             {sub.id}
                           </span>
 
+                          <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                            {sub.cycle || 'วงรอบที่ 1'}
+                          </span>
+
                           <span className="font-bold text-slate-800 text-sm sm:text-base">
                             {sub.modelTeacher}
                           </span>
@@ -579,7 +690,23 @@ export const AdminTab: React.FC<AdminTabProps> = ({
 
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
                           <span>ส่งเมื่อ: {sub.submittedAt}</span>
-                          <span>ไฟล์: {sub.fileName || 'ไม่มี'}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-600">ไฟล์แนบ:</span>
+                            {sub.fileName && sub.fileName !== 'ไม่มี' && sub.fileName !== 'ไม่มีไฟล์แนบ' ? (
+                              <a
+                                href={sub.fileUrl || GOOGLE_DRIVE_FOLDER_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-800 font-semibold hover:underline bg-white px-2 py-0.5 rounded border border-sky-200"
+                                title="เปิดไฟล์ใน Google Drive โรงเรียนบ้านค่าย"
+                              >
+                                <span className="max-w-[160px] truncate">{sub.fileName}</span>
+                                <ExternalLink className="w-3 h-3 text-sky-500 shrink-0" />
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">ไม่มี</span>
+                            )}
+                          </div>
                           {sub.notes && <span>หมายเหตุ: {sub.notes}</span>}
                         </div>
                       </div>
@@ -636,6 +763,17 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
+            <a
+              href={GOOGLE_SHEET_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-emerald-300 hover:text-emerald-200 text-xs sm:text-sm font-semibold transition border border-white/10"
+              title="เปิด Google Sheet บันทึกข้อมูลงานที่ตรวจแล้ว"
+            >
+              <ExternalLink className="w-4 h-4" />
+              <span>เปิด Google Sheet</span>
+            </a>
+
             <button
               onClick={handleSaveReviews}
               disabled={isSaving}
@@ -647,6 +785,13 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Google Sheet Live Database Sync Setup Modal */}
+      <GoogleSheetSyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        onDataSynced={onUpdate}
+      />
     </div>
   );
 };
