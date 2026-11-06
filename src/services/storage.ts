@@ -195,13 +195,43 @@ export function validateWebhookUrl(url: string): UrlValidationResult {
   };
 }
 
+// Web App URL เริ่มต้นถาวรของโรงเรียนบ้านค่าย เพื่อให้ทุกเครื่องและทุกเบราว์เซอร์พร้อมใช้งานได้ทันทีโดยไม่ต้องกรอกใหม่
+export const DEFAULT_WEBHOOK_URL =
+  'https://script.google.com/macros/s/AKfycbzB2UtIF52nTdkOyh45szd63hY9Kmwzsq4GX65Y9krdKrEWDKJ4c9KcEjlnTz7d20QM/exec';
+
 // Google Apps Script Web App Endpoint for using Google Sheet as Live Database
 export function getWebhookUrl(): string {
-  return localStorage.getItem(WEBHOOK_URL_KEY) || '';
+  try {
+    const saved = localStorage.getItem(WEBHOOK_URL_KEY);
+    if (saved && saved.trim() && saved.trim().startsWith('https://script.google.com/macros/s/')) {
+      return saved.trim();
+    }
+  } catch (e) {
+    // ignore
+  }
+  return DEFAULT_WEBHOOK_URL;
 }
 
 export function setWebhookUrl(url: string): void {
-  localStorage.setItem(WEBHOOK_URL_KEY, url.trim());
+  try {
+    const trimmed = url.trim();
+    if (!trimmed || trimmed === DEFAULT_WEBHOOK_URL) {
+      localStorage.removeItem(WEBHOOK_URL_KEY);
+    } else {
+      localStorage.setItem(WEBHOOK_URL_KEY, trimmed);
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+export function resetWebhookUrlToDefault(): string {
+  try {
+    localStorage.removeItem(WEBHOOK_URL_KEY);
+  } catch (e) {
+    // ignore
+  }
+  return DEFAULT_WEBHOOK_URL;
 }
 
 const activeSyncIds = new Set<string>();

@@ -28,6 +28,8 @@ import {
   validateWebhookUrl,
   getSubmissions,
   saveSubmissions,
+  resetWebhookUrlToDefault,
+  DEFAULT_WEBHOOK_URL,
 } from '../services/storage';
 import { PLCSubmission } from '../types/plc';
 
@@ -283,10 +285,27 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
 
           {/* Web App URL input */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold text-slate-800">
-              Web App URL ของ Google Apps Script (สำหรับเชื่อมต่อเป็น API)
-            </label>
-            <div className="flex gap-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-800">
+                Web App URL ของ Google Apps Script (สำหรับเชื่อมต่อเป็น API)
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultUrl = resetWebhookUrlToDefault();
+                  setUrlInput(defaultUrl);
+                  setStatusMessage({
+                    type: 'success',
+                    text: 'คืนค่าเป็น Web App URL เริ่มต้นของโรงเรียนบ้านค่ายเรียบร้อยแล้ว',
+                  });
+                  setTimeout(() => setStatusMessage(null), 3500);
+                }}
+                className="text-[11px] text-sky-600 hover:text-sky-800 font-bold hover:underline"
+              >
+                คืนค่า URL เริ่มต้นของโรงเรียน
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="url"
                 placeholder="https://script.google.com/macros/s/.../exec"
@@ -302,6 +321,9 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
                 บันทึก URL
               </button>
             </div>
+            <p className="text-[11px] text-slate-500">
+              * ระบบถูกตั้งค่าเริ่มต้นให้ใช้ Web App URL ของโรงเรียนบ้านค่ายโดยอัตโนมัติ ทุกเครื่องและทุกคนสามารถส่งงานได้ทันทีโดยไม่ต้องตั้งค่าใหม่
+            </p>
 
             {/* Real-time URL validation indicator */}
             {urlInput.trim() && (() => {

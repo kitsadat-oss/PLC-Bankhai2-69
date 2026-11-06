@@ -28,6 +28,8 @@ import {
   getWebhookUrl,
   setWebhookUrl,
   validateWebhookUrl,
+  resetWebhookUrlToDefault,
+  DEFAULT_WEBHOOK_URL,
 } from '../services/storage';
 import { TabKey } from './Navbar';
 
@@ -251,12 +253,15 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
               webhookUrl ? 'bg-emerald-500 animate-pulse ring-4 ring-emerald-200' : 'bg-amber-500 ring-4 ring-amber-200'
             }`} />
             <div>
-              <p className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
-                <span>{webhookUrl ? 'เชื่อมต่อ Google Drive & Sheet เรียบร้อย' : '⚠️ ยังไม่ได้ระบุ Web App URL สำหรับส่งเข้า Google Drive'}</span>
+              <p className="text-xs sm:text-sm font-bold flex items-center gap-2">
+                <span>{webhookUrl ? 'เชื่อมต่อ Google Drive & Sheet พร้อมใช้งานทุกเครื่อง' : '⚠️ ยังไม่ได้ระบุ Web App URL สำหรับส่งเข้า Google Drive'}</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-medium border border-emerald-300">
+                  URL โรงเรียนบ้านค่าย
+                </span>
               </p>
-              <p className="text-[11px] text-slate-600">
+              <p className="text-[11px] text-slate-600 mt-0.5">
                 {webhookUrl
-                  ? 'ไฟล์แนบจะถูกอัปโหลดเข้าโฟลเดอร์ Google Drive และนำลิงก์บันทึกลง Google Sheet อัตโนมัติเมื่อกดบันทึก'
+                  ? 'ระบบตั้งค่า Web App URL เริ่มต้นให้เรียบร้อยแล้ว ไม่ต้องกรอกใหม่ในทุกเครื่อง ไฟล์จะถูกอัปโหลดเข้า Google Drive และบันทึกลง Sheet อัตโนมัติ'
                   : 'หากต้องการให้อัปโหลดไฟล์เข้าโฟลเดอร์ Google Drive (1X9O0ELOl...) อัตโนมัติ กรุณาระบุ Web App URL'}
               </p>
             </div>
@@ -272,17 +277,30 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
             }`}
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>{webhookUrl ? 'ตรวจสอบ URL' : 'ระบุ Web App URL'}</span>
+            <span>{webhookUrl ? 'ดู / แก้ไข URL' : 'ระบุ Web App URL'}</span>
           </button>
         </div>
 
         {/* Expandable Web App URL input */}
         {showUrlConfig && (
           <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-2 animate-fadeIn">
-            <label className="block text-xs font-bold text-slate-700">
-              Web App URL ของ Google Apps Script (ได้จากการกด Deploy ใน Google Sheet):
-            </label>
-            <div className="flex gap-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700">
+                Web App URL ของ Google Apps Script:
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultUrl = resetWebhookUrlToDefault();
+                  setUrlInputValue(defaultUrl);
+                  setWebhookState(defaultUrl);
+                }}
+                className="text-[11px] text-sky-600 hover:text-sky-800 font-bold hover:underline"
+              >
+                คืนค่า URL เริ่มต้นของโรงเรียน
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="url"
                 placeholder="https://script.google.com/macros/s/.../exec"
@@ -290,17 +308,26 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
                 onChange={(e) => setUrlInputValue(e.target.value)}
                 className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-mono outline-none focus:border-sky-500"
               />
-              <button
-                type="button"
-                onClick={() => {
-                  setWebhookUrl(urlInputValue);
-                  setWebhookState(urlInputValue.trim());
-                  setShowUrlConfig(false);
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition"
-              >
-                บันทึก
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebhookUrl(urlInputValue);
+                    setWebhookState(urlInputValue.trim() || DEFAULT_WEBHOOK_URL);
+                    setShowUrlConfig(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition"
+                >
+                  บันทึก
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowUrlConfig(false)}
+                  className="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition"
+                >
+                  ปิด
+                </button>
+              </div>
             </div>
 
             {/* Validation warning or confirmation */}
