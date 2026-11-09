@@ -23,6 +23,7 @@ import {
 import { LearningSubject, PLCSubmission, PLCCycle, PLC_CYCLES } from '../types/plc';
 import {
   addSubmission,
+  updateSubmission,
   sendSubmissionToGoogleSheet,
   GOOGLE_DRIVE_FOLDER_URL,
   getWebhookUrl,
@@ -179,11 +180,14 @@ export const SubmitTab: React.FC<SubmitTabProps> = ({ onSuccess, onNavigate }) =
         const syncResult = await sendSubmissionToGoogleSheet(submission);
         if (syncResult && syncResult.fileUrl) {
           submission.fileUrl = syncResult.fileUrl;
+          updateSubmission(submission.id, { fileUrl: syncResult.fileUrl });
         }
         if (syncResult && syncResult.error) {
-          setSyncNotice(syncResult.error);
+          setSyncNotice('แจ้งเตือนจาก Apps Script: ' + syncResult.error);
+        } else if (syncResult && syncResult.message && syncResult.message.includes('ข้ามการบันทึกซ้ำซ้อน')) {
+          setSyncNotice('⚠️ ' + syncResult.message);
         } else if (!getWebhookUrl()) {
-          setSyncNotice('ยังไม่ได้ระบุ Web App URL: ข้อมูลและไฟล์ถูกบันทึกไว้ในเครื่องนี้เท่านั้น กรุณาระบุ Web App URL เพื่อให้อัปโหลดเข้า Google Drive และ Sheet อัตโนมัติ');
+          setSyncNotice('ยังไม่ได้ระบุ Web App URL: ข้อมูลและไฟล์ถูกบันทึกไว้ในเครื่องนี้เท่านั้น');
         } else {
           setSyncNotice('');
         }

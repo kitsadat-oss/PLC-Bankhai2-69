@@ -12,12 +12,16 @@ import {
   ChevronRight,
   X,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { PLCSubmission, SubmissionStatus } from '../types/plc';
 import { GOOGLE_DRIVE_FOLDER_URL } from '../services/storage';
 
 interface StatusTabProps {
   submissions: PLCSubmission[];
+  isSyncing?: boolean;
+  lastSyncTime?: string | null;
+  onRefresh?: () => void;
 }
 
 const SUBJECT_FILTER_OPTIONS = [
@@ -34,7 +38,12 @@ const SUBJECT_FILTER_OPTIONS = [
   'งานแนะแนว',
 ] as const;
 
-export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
+export const StatusTab: React.FC<StatusTabProps> = ({
+  submissions,
+  isSyncing = false,
+  lastSyncTime = null,
+  onRefresh,
+}) => {
   const [selectedStatus, setSelectedStatus] = useState<string>('ทั้งหมด');
   const [selectedSubject, setSelectedSubject] = useState<string>('ทั้งหมด');
   const [searchTerm, setSearchTerm] = useState('');
@@ -152,8 +161,19 @@ export const StatusTab: React.FC<StatusTabProps> = ({ submissions }) => {
           </p>
         </div>
 
-        {/* Status Count Pills */}
+        {/* Status Count Pills & Sync Button */}
         <div className="flex flex-wrap items-center gap-2">
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isSyncing}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-60 cursor-pointer shadow-xs"
+              title={lastSyncTime ? `ดึงข้อมูลล่าสุดจาก Google Sheet (ซิงค์ล่าสุด: ${lastSyncTime})` : 'ดึงข้อมูลล่าสุดจาก Google Sheet'}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'กำลังดึงข้อมูล...' : 'รีเฟรชข้อมูล'}</span>
+            </button>
+          )}
           <button
             onClick={() => setSelectedStatus('ทั้งหมด')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${

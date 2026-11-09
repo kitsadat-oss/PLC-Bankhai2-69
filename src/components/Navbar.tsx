@@ -7,6 +7,7 @@ import {
   BarChart3,
   Menu,
   X,
+  RefreshCw,
 } from 'lucide-react';
 
 export type TabKey = 'home' | 'submit' | 'status' | 'admin' | 'dashboard';
@@ -16,6 +17,9 @@ interface NavbarProps {
   onSelectTab: (tab: TabKey) => void;
   pendingCount: number;
   isAdminAuthenticated: boolean;
+  isSyncing?: boolean;
+  lastSyncTime?: string | null;
+  onRefresh?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -23,6 +27,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   pendingCount,
   isAdminAuthenticated,
+  isSyncing = false,
+  lastSyncTime = null,
+  onRefresh,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
@@ -129,10 +136,39 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               );
             })}
+
+            {/* Google Sheet Live Sync Button */}
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={isSyncing}
+                title={lastSyncTime ? `ดึงข้อมูลล่าสุดจาก Google Sheet (ซิงค์ล่าสุด: ${lastSyncTime})` : 'ดึงข้อมูลล่าสุดจาก Google Sheet'}
+                className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition cursor-pointer disabled:opacity-60 shadow-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden xl:inline">{isSyncing ? 'กำลังซิงค์...' : 'ซิงค์ชีต'}</span>
+                {lastSyncTime && !isSyncing && (
+                  <span className="text-[10px] text-emerald-600 font-mono hidden 2xl:inline">({lastSyncTime})</span>
+                )}
+              </button>
+            )}
           </nav>
 
-          {/* Mobile Menu Button */}
-          <div className="flex items-center lg:hidden">
+          {/* Mobile Right Controls: Sync & Hamburger */}
+          <div className="flex items-center gap-2 lg:hidden">
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={isSyncing}
+                className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1"
+                title="ซิงค์ข้อมูลล่าสุดจาก Google Sheet"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="text-[11px]">{isSyncing ? 'ซิงค์...' : 'ซิงค์ชีต'}</span>
+              </button>
+            )}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-lg text-slate-600 hover:bg-sky-50 hover:text-sky-600 transition"

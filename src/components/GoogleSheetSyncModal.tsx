@@ -171,8 +171,8 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
 
     try {
       const localData = getSubmissions();
-      const success = await syncAllToGoogleSheet(localData, urlInput.trim());
-      if (success) {
+      const res = await syncAllToGoogleSheet(localData, urlInput.trim());
+      if (res && res.success) {
         setStatusMessage({
           type: 'success',
           text: `ส่งข้อมูลทั้งหมด (${localData.length} รายการ) ไปยัง Google Sheet สำเร็จเรียบร้อย!`,
@@ -180,7 +180,7 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
       } else {
         setStatusMessage({
           type: 'error',
-          text: 'ไม่สามารถส่งข้อมูลไปยัง Google Sheet ได้ กรุณาตรวจสอบ URL',
+          text: res?.message || 'ไม่สามารถส่งข้อมูลไปยัง Google Sheet ได้ กรุณาตรวจสอบ URL',
         });
       }
     } catch (err: any) {

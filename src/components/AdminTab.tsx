@@ -20,6 +20,7 @@ import {
   Check,
   Database,
   FolderOpen,
+  RefreshCw,
 } from 'lucide-react';
 import { AdminActionStatus, PLCSubmission } from '../types/plc';
 import {
@@ -29,14 +30,19 @@ import {
   GOOGLE_DRIVE_FOLDER_URL,
   copyForGoogleSheet,
   syncAllToGoogleSheet,
+  updateMultipleSubmissionsStatusInGoogleSheet,
+  deleteSubmissionFromGoogleSheet,
   getWebhookUrl,
 } from '../services/storage';
 import { GoogleSheetSyncModal } from './GoogleSheetSyncModal';
 
 interface AdminTabProps {
   submissions: PLCSubmission[];
-  onUpdate: () => void;
+  onUpdate: (overrideData?: PLCSubmission[]) => void;
   onLogout: () => void;
+  isSyncing?: boolean;
+  lastSyncTime?: string | null;
+  onRefresh?: () => void;
 }
 
 const SUBJECT_LIST = [
@@ -63,6 +69,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   submissions,
   onUpdate,
   onLogout,
+  isSyncing = false,
+  lastSyncTime = null,
+  onRefresh,
 }) => {
   // Mode: 'pending' (คิวรอตรวจ - รายการที่ตรวจแล้วจะไม่ขึ้นมาแสดง) หรือ 'history' (ดูรายการที่ตรวจแล้วทั้งหมด)
   const [viewMode, setViewMode] = useState<'pending' | 'history'>('pending');
@@ -194,7 +203,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   };
 
   // The main Save Action: "บันทึกการตรวจสอบ"
-  const handleSaveReviews = () => {
+  const handleSaveReviews = async () => {
     setIsSaving(true);
     setSaveSuccessMessage('');
 
@@ -209,12 +218,20 @@ export const AdminTab: React.FC<AdminTabProps> = ({
       let deletedCount = 0;
       let auditedCount = 0;
       let resubmitCount = 0;
+      const modifiedItemsToSync: Array<{
+        id: string;
+        status: string;
+        adminFeedback?: string;
+        reviewedAt?: string;
+      }> = [];
+      const deletedIds: string[] = [];
 
       for (const [id, draft] of Object.entries(drafts)) {
         if (draft.status === 'ลบ') {
           // Rule: ข้อมูลใดที่ ADMIN กด "ลบ" และกดบันทึก ให้ลบข้อมูลนั้น
           updatedList = updatedList.filter((item) => item.id !== id);
           deletedCount++;
+          deletedIds.push(id);
         } else {
           const itemIndex = updatedList.findIndex((item) => item.id === id);
           if (itemIndex !== -1) {
@@ -227,21 +244,50 @@ export const AdminTab: React.FC<AdminTabProps> = ({
               if (draft.status === 'ตรวจแล้ว') auditedCount++;
               if (draft.status === 'ส่งใหม่') resubmitCount++;
 
-              updatedList[itemIndex] = {
+              const updatedItem: PLCSubmission = {
                 ...currentItem,
                 status: draft.status as any,
                 adminFeedback: draft.feedback?.trim() || currentItem.adminFeedback,
                 reviewedAt: reviewTimestamp,
                 reviewedBy: 'Admin งานวิชาการ โรงเรียนบ้านค่าย',
               };
+              updatedList[itemIndex] = updatedItem;
+
+              modifiedItemsToSync.push({
+                id: updatedItem.id,
+                status: updatedItem.status,
+                adminFeedback: updatedItem.adminFeedback,
+                reviewedAt: updatedItem.reviewedAt,
+              });
             }
           }
         }
       }
 
+      // 1. บันทึกลงเครื่องและอัปเดต state ของหน้าเว็บทันทีก่อน ไม่ให้ดีดกลับ
       saveSubmissions(updatedList);
-      syncAllToGoogleSheet(updatedList); // Push real-time to Google Sheet database
-      onUpdate();
+      onUpdate(updatedList);
+
+      // 2. ส่งข้อมูลไปอัปเดตสถานะใน Google Sheet ทันทีด้วย update_status โดยตรงสำหรับทุกรายการที่ถูกตรวจ
+      let sheetStatusDetail = '';
+      if (modifiedItemsToSync.length > 0) {
+        const updateResult = await updateMultipleSubmissionsStatusInGoogleSheet(modifiedItemsToSync);
+        if (updateResult.success) {
+          sheetStatusDetail = ` • อัปเดตสถานะลง Google Sheet แล้ว (${updateResult.successCount}/${modifiedItemsToSync.length} รายการ)`;
+        } else {
+          sheetStatusDetail = ` [⚠️ Google Sheet: ${updateResult.message}]`;
+        }
+      }
+
+      // 3. หากมีรายการที่ถูกลบ ให้ลบออกจาก Google Sheet
+      if (deletedIds.length > 0) {
+        for (const delId of deletedIds) {
+          deleteSubmissionFromGoogleSheet(delId).catch(console.warn);
+        }
+      }
+
+      // 4. สำรองด้วย syncAllToGoogleSheet ในพื้นหลัง
+      syncAllToGoogleSheet(updatedList).catch((err) => console.warn('Background syncAll warning:', err));
 
       confetti({
         particleCount: 60,
@@ -250,15 +296,23 @@ export const AdminTab: React.FC<AdminTabProps> = ({
         colors: ['#0284c7', '#10b981', '#f59e0b'],
       });
 
-      const msg = `บันทึกการตรวจสอบเรียบร้อยแล้ว! (ตรวจแล้ว ${auditedCount} รายการ, ส่งใหม่ ${resubmitCount} รายการ, ลบ ${deletedCount} รายการ)`;
+      const totalReviewed = auditedCount + resubmitCount;
+      let msg = `บันทึกการตรวจสอบเรียบร้อยแล้ว! (ตรวจแล้ว ${auditedCount} รายการ, ส่งใหม่ ${resubmitCount} รายการ${
+        deletedCount > 0 ? `, ลบ ${deletedCount} รายการ` : ''
+      })`;
+      if (sheetStatusDetail) {
+        msg += sheetStatusDetail;
+      } else if (totalReviewed > 0) {
+        msg += ' • ซิงค์สถานะลง Google Sheet เรียบร้อย';
+      }
       setSaveSuccessMessage(msg);
 
       setTimeout(() => {
         setSaveSuccessMessage('');
       }, 5000);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + (err?.message || 'กรุณาลองใหม่อีกครั้ง'));
     } finally {
       setIsSaving(false);
     }
@@ -292,6 +346,22 @@ export const AdminTab: React.FC<AdminTabProps> = ({
 
         {/* Admin Tools: Google Sheet, Database Setup, Export to CSV & Logout */}
         <div className="flex flex-wrap items-center gap-2">
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={isSyncing}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition shadow-xs disabled:opacity-60 cursor-pointer"
+              title={lastSyncTime ? `ดึงข้อมูลส่งงานล่าสุดจาก Google Sheet (ซิงค์ล่าสุด: ${lastSyncTime})` : 'ดึงข้อมูลส่งงานล่าสุดจาก Google Sheet'}
+            >
+              <RefreshCw className={`w-4 h-4 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'กำลังดึงข้อมูลล่าสุด...' : 'รีเฟรชข้อมูลจาก Sheet'}</span>
+              {lastSyncTime && !isSyncing && (
+                <span className="text-[10px] text-emerald-600 font-mono hidden sm:inline">({lastSyncTime})</span>
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setIsSyncModalOpen(true)}

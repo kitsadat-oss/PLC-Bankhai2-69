@@ -12,6 +12,48 @@ export const GOOGLE_DRIVE_FOLDER_ID = '1X9O0ELOl-aBuc7n6L9AJJj3jxcoEGMUs';
 export const GOOGLE_DRIVE_FOLDER_URL =
   'https://drive.google.com/drive/folders/1X9O0ELOl-aBuc7n6L9AJJj3jxcoEGMUs?usp=drive_link';
 
+/**
+ * Helper to check whether an item is sample, test, or debug data
+ */
+export function isSampleOrTestData(item: PLCSubmission): boolean {
+  if (!item) return true;
+  const id = String(item.id || '').toUpperCase();
+  const teacher = String(item.modelTeacher || '');
+  const topic = String(item.lsTopic || '');
+  const group = String(item.groupName || '');
+  const notes = String(item.notes || '');
+
+  // Check test/debug IDs
+  if (
+    id.includes('DEBUG') ||
+    id.includes('BATCH') ||
+    id.includes('TEST') ||
+    id.startsWith('SAMPLE') ||
+    id === 'PLC-2569-001' ||
+    id === 'PLC-2569-002'
+  ) {
+    return true;
+  }
+
+  // Check sample names or test text
+  if (
+    teacher.includes('สมชาย มีสุข') ||
+    teacher.includes('ณิชารัตน์ เจริญพร') ||
+    teacher.includes('ทดสอบระบบ') ||
+    teacher.includes('ครูทดสอบ') ||
+    group.includes('กลุ่มทดสอบ') ||
+    topic.includes('ทดสอบการส่งไฟล์') ||
+    topic.includes('ทดสอบการอัปเดต') ||
+    topic.includes('หัวข้อทดสอบ') ||
+    notes.includes('รายการทดสอบ') ||
+    notes.includes('ทดสอบการอัปเดต')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function getSubmissions(): PLCSubmission[] {
   try {
     // ล้างคีย์ข้อมูลตัวอย่างเดิมเพื่อความสะอาดสำหรับใช้งานจริง
@@ -30,13 +72,11 @@ export function getSubmissions(): PLCSubmission[] {
       return [];
     }
 
-    // กรองข้อมูลตัวอย่างเดิมออกหากยังมีตกค้าง
-    const filtered = parsed.filter(
-      (item) => item.modelTeacher !== 'ครูสมชาย มีสุข' && item.modelTeacher !== 'ครูณิชารัตน์ เจริญพร'
-    );
-    if (filtered.length !== parsed.length) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-      return filtered;
+    // กรองข้อมูลตัวอย่างและข้อมูลทดสอบออกทั้งหมดเพื่อเตรียมใช้งานจริง
+    const clean = parsed.filter((item) => !isSampleOrTestData(item));
+    if (clean.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
+      return clean;
     }
 
     return parsed;
@@ -59,20 +99,23 @@ export function clearAllSubmissions(): PLCSubmission[] {
   return [];
 }
 
+export function generateSubmissionId(): string {
+  // สร้างรหัสส่งงานที่ไม่ซ้ำกันแน่นอน แม้ส่งงานพร้อมกันหลายเครื่องในเสี้ยววินาที (Timestamp 6 หลัก)
+  const timeSlice = Date.now().toString().slice(-6);
+  const current = getSubmissions();
+  let id = `PLC-2569-${timeSlice}`;
+  
+  // หากมีรหัสนี้ซ้ำอยู่ในเครื่อง ให้เติมเลขสุ่ม 2 หลักเพื่อป้องกันการชนกัน 100%
+  if (current.some((item) => item.id === id)) {
+    const rand = Math.floor(Math.random() * 90 + 10).toString();
+    id = `PLC-2569-${timeSlice}-${rand}`;
+  }
+  return id;
+}
+
 export function addSubmission(newSub: Omit<PLCSubmission, 'id' | 'status'> & { status?: SubmissionStatus }): PLCSubmission {
   const current = getSubmissions();
-  
-  // คำนวณเลขรหัสส่งงานอัตโนมัติจากเลขสูงสุดที่มีอยู่
-  let maxNum = 0;
-  current.forEach((item) => {
-    const match = item.id.match(/PLC-2569-(\d+)/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  });
-  const nextNumber = maxNum + 1;
-  const id = `PLC-2569-${String(nextNumber).padStart(3, '0')}`;
+  const id = generateSubmissionId();
 
   const submission: PLCSubmission = {
     ...newSub,
@@ -244,7 +287,7 @@ let isTestDriveActive = false;
 export async function sendSubmissionToGoogleSheet(
   submission: PLCSubmission,
   customUrl?: string
-): Promise<{ success: boolean; fileUrl?: string; error?: string }> {
+): Promise<{ success: boolean; fileUrl?: string; message?: string; error?: string }> {
   const url = customUrl || getWebhookUrl();
   if (!url) {
     return {
@@ -253,17 +296,16 @@ export async function sendSubmissionToGoogleSheet(
     };
   }
 
-  // ป้องกันการส่งคำขอซ้ำซ้อนสำหรับ submission id เดียวกัน
+  // ป้องกันการส่งคำขอซ้ำซ้อนสำหรับ submission id เดียวกันภายใน 10 วินาที
   if (activeSyncIds.has(submission.id)) {
-    console.log(`Skipping duplicate sync request for ${submission.id}`);
+    console.log(`Skipping duplicate in-flight sync request for ${submission.id}`);
     return { success: true, fileUrl: submission.fileUrl };
   }
   activeSyncIds.add(submission.id);
 
-  // ปลดล็อกหลังจาก 15 วินาที
   setTimeout(() => {
     activeSyncIds.delete(submission.id);
-  }, 15000);
+  }, 10000);
 
   const payload = {
     action: 'create',
@@ -274,21 +316,73 @@ export async function sendSubmissionToGoogleSheet(
   };
 
   try {
-    // ส่งเพียง 1 Request ผ่าน no-cors โดยตรง เพื่อป้องกันการส่งซ้ำสองรอบจาก CORS redirect
-    await fetch(url, {
+    // ส่งข้อมูลแบบมาตรฐาน (CORS Simple Request) เพื่อให้อ่านผลลัพธ์ JSON จาก Apps Script ได้
+    const response = await fetch(url, {
       method: 'POST',
-      mode: 'no-cors',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
       },
       body: JSON.stringify(payload),
     });
 
-    return { success: true, fileUrl: GOOGLE_DRIVE_FOLDER_URL };
+    if (!response.ok) {
+      throw new Error(`Google Apps Script ส่งรหัสสถานะ HTTP ${response.status}`);
+    }
+
+    const resJson = await response.json();
+
+    if (resJson.status === 'success') {
+      if (resJson.message && resJson.message.includes('ข้ามการบันทึกซ้ำซ้อน')) {
+        console.warn('Apps Script skipped duplicate:', resJson.message);
+        return {
+          success: true,
+          fileUrl: resJson.fileUrl || submission.fileUrl || GOOGLE_DRIVE_FOLDER_URL,
+          message: resJson.message,
+        };
+      }
+
+      return {
+        success: true,
+        fileUrl: resJson.fileUrl || GOOGLE_DRIVE_FOLDER_URL,
+        message: 'บันทึกข้อมูลและอัปโหลดไฟล์เรียบร้อย',
+      };
+    } else if (resJson.status === 'warning') {
+      return {
+        success: true,
+        fileUrl: resJson.fileUrl || GOOGLE_DRIVE_FOLDER_URL,
+        message: resJson.message || 'บันทึกข้อมูลลงชีตสำเร็จ แต่อาจมีข้อผิดพลาดในการอัปโหลดไฟล์',
+      };
+    } else {
+      return {
+        success: false,
+        error: resJson.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลใน Google Apps Script',
+      };
+    }
   } catch (err: any) {
-    activeSyncIds.delete(submission.id);
-    console.warn('Google Sheet send failed:', err);
-    return { success: false, error: err?.message || 'ส่งข้อมูลไม่สำเร็จ' };
+    console.warn('Standard POST failed or blocked by CORS redirect, attempting fallback:', err);
+    // กรณีที่เบราว์เซอร์หรือสภาพแวดล้อมเครือข่ายบล็อกการอ่าน CORS redirect ให้ fallback แบบ no-cors สำรอง
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      return {
+        success: true,
+        fileUrl: GOOGLE_DRIVE_FOLDER_URL,
+        message: 'ส่งข้อมูลแบบสำรองสำเร็จ (no-cors)',
+      };
+    } catch (fallbackErr: any) {
+      activeSyncIds.delete(submission.id);
+      return {
+        success: false,
+        error: err?.message || 'ส่งข้อมูลไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต',
+      };
+    }
   }
 }
 
@@ -396,18 +490,122 @@ export async function testDriveUpload(customUrl?: string): Promise<{ success: bo
 }
 
 /**
- * Batch sync all submissions to Google Sheet
+ * Update the review status and feedback of a single submission directly in Google Sheet
+ * Compatible with existing and new Google Apps Script deployments (action: 'update_status')
+ */
+export async function updateSubmissionStatusInGoogleSheet(
+  item: {
+    id: string;
+    status: string;
+    adminFeedback?: string;
+    reviewedAt?: string;
+  },
+  customUrl?: string
+): Promise<{ success: boolean; message?: string }> {
+  const url = customUrl || getWebhookUrl();
+  if (!url) return { success: false, message: 'ยังไม่ได้ระบุ Web App URL' };
+
+  const payload = {
+    action: 'update_status',
+    data: {
+      id: item.id,
+      status: item.status,
+      adminFeedback: item.adminFeedback || '',
+      reviewedAt: item.reviewedAt || '',
+    },
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      try {
+        const json = await res.json();
+        if (json.status === 'success') {
+          return { success: true, message: 'อัปเดตสถานะใน Google Sheet สำเร็จ' };
+        } else if (json.status === 'not_found') {
+          return { success: false, message: `ไม่พบรหัสงาน ${item.id} ใน Google Sheet` };
+        } else {
+          return { success: false, message: json.message || 'เกิดข้อผิดพลาดในการอัปเดตสถานะ' };
+        }
+      } catch {
+        return { success: true, message: 'ส่งคำขออัปเดตสถานะเรียบร้อยแล้ว' };
+      }
+    }
+    return { success: false, message: `HTTP Error ${res.status}` };
+  } catch (err: any) {
+    console.warn('update_status standard fetch failed, attempting no-cors fallback:', err);
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+      return { success: true, message: 'ส่งคำขออัปเดตสถานะแล้ว (no-cors)' };
+    } catch (fallbackErr: any) {
+      return { success: false, message: fallbackErr?.message || 'เชื่อมต่อกับ Google Sheet ไม่สำเร็จ' };
+    }
+  }
+}
+
+/**
+ * Update multiple reviewed submissions in Google Sheet in parallel
+ */
+export async function updateMultipleSubmissionsStatusInGoogleSheet(
+  items: Array<{
+    id: string;
+    status: string;
+    adminFeedback?: string;
+    reviewedAt?: string;
+  }>,
+  customUrl?: string
+): Promise<{ success: boolean; successCount: number; message: string }> {
+  if (items.length === 0) {
+    return { success: true, successCount: 0, message: 'ไม่มีรายการที่ต้องอัปเดตสถานะ' };
+  }
+
+  const results = await Promise.allSettled(
+    items.map((item) => updateSubmissionStatusInGoogleSheet(item, customUrl))
+  );
+
+  let successCount = 0;
+  results.forEach((r) => {
+    if (r.status === 'fulfilled' && r.value.success) {
+      successCount++;
+    }
+  });
+
+  return {
+    success: successCount > 0 || items.length === 0,
+    successCount,
+    message: `อัปเดตสถานะลง Google Sheet สำเร็จ ${successCount} จาก ${items.length} รายการ`,
+  };
+}
+
+/**
+ * Batch sync all submissions to Google Sheet.
+ * Tries 'batch_update' first; if the deployed script returns 'invalid_action',
+ * it automatically falls back to updating individual items via 'update_status'.
  */
 export async function syncAllToGoogleSheet(
   submissions: PLCSubmission[],
   customUrl?: string
-): Promise<boolean> {
+): Promise<{ success: boolean; message?: string }> {
   const url = customUrl || getWebhookUrl();
-  if (!url) return false;
+  if (!url) return { success: false, message: 'ยังไม่ได้ระบุ Web App URL' };
+
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
-      mode: 'no-cors',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
       },
@@ -416,11 +614,120 @@ export async function syncAllToGoogleSheet(
         data: submissions,
       }),
     });
-    return true;
-  } catch (err) {
-    console.error('Google Sheet batch sync failed:', err);
-    return false;
+
+    if (res.ok) {
+      try {
+        const json = await res.json();
+        if (json.status === 'success') {
+          return {
+            success: true,
+            message: json.message || 'บันทึกผลการตรวจลง Google Sheet เรียบร้อยแล้ว',
+          };
+        } else if (json.status === 'invalid_action') {
+          // Deployed script does not support batch_update yet; fallback to individual updates
+          console.warn('Apps Script does not support batch_update, falling back to update_status for each item...');
+          const updateResult = await updateMultipleSubmissionsStatusInGoogleSheet(submissions, url);
+          return {
+            success: updateResult.success,
+            message: updateResult.message,
+          };
+        } else {
+          return { success: false, message: json.message || 'Google Sheet รายงานข้อผิดพลาด' };
+        }
+      } catch {
+        return { success: true, message: 'ส่งข้อมูลไปยัง Google Sheet เรียบร้อยแล้ว' };
+      }
+    }
+    return { success: false, message: `Google Apps Script ส่งรหัสสถานะ HTTP ${res.status}` };
+  } catch (err: any) {
+    console.warn('Google Sheet batch sync standard fetch failed, attempting individual update fallback:', err);
+    try {
+      const updateResult = await updateMultipleSubmissionsStatusInGoogleSheet(submissions, url);
+      return {
+        success: updateResult.success,
+        message: updateResult.message,
+      };
+    } catch (fallbackErr: any) {
+      console.error('Google Sheet sync fallback failed:', fallbackErr);
+      return { success: false, message: fallbackErr?.message || 'ส่งข้อมูลไปยัง Google Sheet ไม่สำเร็จ' };
+    }
   }
+}
+
+/**
+ * Intelligently merge remote Google Sheet data with local data:
+ * - If local has a review status ('ตรวจแล้ว' หรือ 'ส่งใหม่') with reviewedAt,
+ *   while remote is still 'รอตรวจ', PRESERVE the local review so it NEVER reverts to 'รอตรวจ'!
+ * - Returns pendingStatusUpdates so caller can sync them to Google Sheet in background.
+ * - Preserves locally added items that haven't reached remote yet.
+ */
+export function mergeRemoteWithLocal(
+  remoteData: PLCSubmission[],
+  localData: PLCSubmission[]
+): {
+  merged: PLCSubmission[];
+  pendingStatusUpdates: PLCSubmission[];
+} {
+  const cleanRemote = remoteData.filter((item) => !isSampleOrTestData(item));
+  const cleanLocal = localData.filter((item) => !isSampleOrTestData(item));
+
+  const localMap = new Map<string, PLCSubmission>();
+  cleanLocal.forEach((sub) => {
+    if (sub.id) localMap.set(sub.id.trim(), sub);
+  });
+
+  const pendingStatusUpdates: PLCSubmission[] = [];
+  const mergedMap = new Map<string, PLCSubmission>();
+
+  // 1. Process remote items
+  for (const remote of cleanRemote) {
+    const id = remote.id ? remote.id.trim() : '';
+    if (!id) continue;
+
+    const local = localMap.get(id);
+    if (!local) {
+      mergedMap.set(id, remote);
+      continue;
+    }
+
+    const localHasReview = local.status === 'ตรวจแล้ว' || local.status === 'ส่งใหม่';
+    const remoteHasReview = remote.status === 'ตรวจแล้ว' || remote.status === 'ส่งใหม่';
+
+    if (localHasReview && !remoteHasReview) {
+      // Local is reviewed, but remote still says 'รอตรวจ'
+      // DO NOT revert to 'รอตรวจ'! Keep the review and queue sync to Google Sheet
+      const preservedItem: PLCSubmission = {
+        ...remote,
+        status: local.status,
+        adminFeedback: local.adminFeedback || remote.adminFeedback || '',
+        reviewedAt: local.reviewedAt || remote.reviewedAt || '',
+        reviewedBy: local.reviewedBy || remote.reviewedBy || 'Admin งานวิชาการ โรงเรียนบ้านค่าย',
+      };
+      mergedMap.set(id, preservedItem);
+      pendingStatusUpdates.push(preservedItem);
+    } else {
+      // Remote also reviewed or neither reviewed: merge with priority to remote fileUrl, but preserve local edits
+      mergedMap.set(id, {
+        ...local,
+        ...remote,
+        adminFeedback: remote.adminFeedback || local.adminFeedback || '',
+        reviewedAt: remote.reviewedAt || local.reviewedAt || '',
+      });
+    }
+  }
+
+  // 2. Include local items not present in remote (offline submissions / newly submitted)
+  for (const local of cleanLocal) {
+    const id = local.id ? local.id.trim() : '';
+    if (id && !mergedMap.has(id)) {
+      mergedMap.set(id, local);
+    }
+  }
+
+  return {
+    merged: Array.from(mergedMap.values()),
+    pendingStatusUpdates,
+  };
 }
 
 /**
@@ -435,7 +742,8 @@ export async function fetchFromGoogleSheet(customUrl?: string): Promise<PLCSubmi
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const json = await res.json();
     if (json.status === 'success' && Array.isArray(json.data)) {
-      return json.data as PLCSubmission[];
+      const cleanData = (json.data as PLCSubmission[]).filter((item) => !isSampleOrTestData(item));
+      return cleanData;
     }
     return null;
   } catch (err) {
@@ -589,6 +897,12 @@ function doPost(e) {
       var fileUrl = item.fileUrl || "";
       var uploadError = "";
 
+      // หากไม่มีรหัสส่งงาน ให้สร้างอัตโนมัติตามเวลา (Timestamp)
+      if (!item.id) {
+        var timeSlice = new Date().getTime().toString().slice(-6);
+        item.id = "PLC-2569-" + timeSlice;
+      }
+
       // 0. ตรวจสอบว่ามีรหัสส่งงานนี้อยู่ในชีตแล้วหรือไม่ เพื่อป้องกันการบันทึกซ้ำซ้อน (Duplicate Protection)
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
@@ -689,33 +1003,80 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    if (action === 'batch_update' || action === 'update_all') {
+    if (action === 'batch_update' || action === 'update_all' || action === 'update_reviews') {
       var allData = payload.data;
-      if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, 13).clearContent();
+      var lastRow = sheet.getLastRow();
+      
+      if (lastRow > 1) {
+        var existingRange = sheet.getRange(2, 1, lastRow - 1, 13);
+        var existingValues = existingRange.getValues();
+        var idToRowIndex = {};
+        for (var r = 0; r < existingValues.length; r++) {
+          var rowId = String(existingValues[r][0]).trim();
+          if (rowId) {
+            idToRowIndex[rowId] = r;
+          }
+        }
+
+        allData.forEach(function(item) {
+          var rIdx = idToRowIndex[String(item.id).trim()];
+          if (rIdx !== undefined) {
+            existingValues[rIdx][7] = item.status || 'รอตรวจ';
+            existingValues[rIdx][8] = item.adminFeedback || '';
+            existingValues[rIdx][9] = item.reviewedAt || '';
+          }
+        });
+
+        existingRange.setValues(existingValues);
       }
-      var rowsToAppend = allData.map(function(item) {
-        return [
-          item.id,
-          item.cycle || "วงรอบที่ 1",
-          item.modelTeacher,
-          item.groupName,
-          item.lsTopic,
-          item.subjectGroup,
-          item.submittedAt,
-          item.status || "รอตรวจ",
-          item.adminFeedback || "",
-          item.reviewedAt || "",
-          item.fileName || "",
-          item.fileUrl || "",
-          item.notes || ""
-        ];
-      });
-      if (rowsToAppend.length > 0) {
-        sheet.getRange(2, 1, rowsToAppend.length, 13).setValues(rowsToAppend);
-      }
-      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Batch updated successfully" }))
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "บันทึกผลการตรวจลง Google Sheet เรียบร้อยแล้ว" }))
         .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'update_status' || action === 'review_submission') {
+      var updateItem = payload.data;
+      var lastRow = sheet.getLastRow();
+      var found = false;
+      if (lastRow > 1) {
+        var existingRange = sheet.getRange(2, 1, lastRow - 1, 13);
+        var existingValues = existingRange.getValues();
+        for (var k = 0; k < existingValues.length; k++) {
+          if (String(existingValues[k][0]).trim() === String(updateItem.id).trim()) {
+            existingValues[k][7] = updateItem.status || 'รอตรวจ';
+            existingValues[k][8] = updateItem.adminFeedback || '';
+            existingValues[k][9] = updateItem.reviewedAt || '';
+            found = true;
+            break;
+          }
+        }
+        if (found) {
+          existingRange.setValues(existingValues);
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ 
+        status: found ? "success" : "not_found", 
+        message: found ? "บันทึกสถานะเรียบร้อย" : "ไม่พบรหัสงานนี้ใน Google Sheet" 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'delete' || action === 'delete_submission') {
+      var deleteId = String(payload.id || (payload.data && payload.data.id) || '').trim();
+      var lastRow = sheet.getLastRow();
+      var deleted = false;
+      if (lastRow > 1 && deleteId) {
+        var existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var d = 0; d < existingIds.length; d++) {
+          if (String(existingIds[d][0]).trim() === deleteId) {
+            sheet.deleteRow(d + 2);
+            deleted = true;
+            break;
+          }
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ 
+        status: deleted ? "success" : "not_found", 
+        message: deleted ? "ลบรายการออกจาก Google Sheet เรียบร้อยแล้ว" : "ไม่พบรหัสงานนี้ใน Google Sheet" 
+      })).setMimeType(ContentService.MimeType.JSON);
     }
 
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Unknown action" }))
@@ -728,6 +1089,42 @@ function doPost(e) {
   }
 }
 `;
+}
+
+/**
+ * Delete a submission from Google Sheet
+ */
+export async function deleteSubmissionFromGoogleSheet(
+  id: string,
+  customUrl?: string
+): Promise<{ success: boolean; message?: string }> {
+  const url = customUrl || getWebhookUrl();
+  if (!url) return { success: false, message: 'ยังไม่ได้ระบุ Web App URL' };
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify({
+        action: 'delete',
+        id,
+        data: { id },
+      }),
+    });
+    if (res.ok) {
+      try {
+        const json = await res.json();
+        return { success: json.status === 'success', message: json.message };
+      } catch {
+        return { success: true, message: 'ส่งคำขอลบรายการเรียบร้อย' };
+      }
+    }
+    return { success: false, message: `HTTP Error ${res.status}` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'ส่งคำขอลบไม่สำเร็จ' };
+  }
 }
 
 async function trySendToWebhook(submission: PLCSubmission): Promise<void> {

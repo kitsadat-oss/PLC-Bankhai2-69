@@ -14,7 +14,11 @@ import { AdminPasswordModal } from './components/AdminPasswordModal';
 import { PLCSubmission } from './types/plc';
 import {
   getSubmissions,
+  saveSubmissions,
   clearAllSubmissions,
+  fetchFromGoogleSheet,
+  mergeRemoteWithLocal,
+  updateSubmissionStatusInGoogleSheet,
 } from './services/storage';
 import { Trash2 } from 'lucide-react';
 
@@ -23,14 +27,56 @@ export default function App() {
   const [submissions, setSubmissions] = useState<PLCSubmission[]>([]);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-  // Load submissions from storage on mount
+  // ดึงข้อมูลอัตโนมัติจาก Google Sheet (Live Cloud Sync) พร้อมผสานข้อมูลป้องกันสถานะดีดกลับ
+  const syncWithGoogleSheet = async (showLoading = true) => {
+    if (showLoading) setIsSyncing(true);
+    try {
+      const remoteData = await fetchFromGoogleSheet();
+      if (remoteData && Array.isArray(remoteData)) {
+        const currentLocal = getSubmissions();
+        const { merged, pendingStatusUpdates } = mergeRemoteWithLocal(remoteData, currentLocal);
+
+        saveSubmissions(merged);
+        setSubmissions(merged);
+
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} น.`;
+        setLastSyncTime(timeStr);
+
+        // หากมีรายการที่ตรวจแล้วในเครื่องแต่ใน Google Sheet ยังไม่ได้รับ ให้ส่งอัปเดตไป Google Sheet ทันที
+        if (pendingStatusUpdates.length > 0) {
+          console.log(`Auto-healing: pushing ${pendingStatusUpdates.length} reviewed items to Google Sheet...`);
+          for (const item of pendingStatusUpdates) {
+            updateSubmissionStatusInGoogleSheet(item).catch((err) =>
+              console.warn('Background status sync error:', err)
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Auto-sync with Google Sheet failed:', err);
+    } finally {
+      if (showLoading) setIsSyncing(false);
+    }
+  };
+
+  // โหลดข้อมูลแคชทันที และดึงข้อมูลสดจาก Google Sheet อัตโนมัติตั้งแต่เปิดเว็บ
   useEffect(() => {
     setSubmissions(getSubmissions());
+    syncWithGoogleSheet(true);
   }, []);
 
-  const refreshSubmissions = () => {
-    setSubmissions(getSubmissions());
+  const refreshSubmissions = (overrideData?: PLCSubmission[]) => {
+    if (overrideData && Array.isArray(overrideData)) {
+      saveSubmissions(overrideData);
+      setSubmissions(overrideData);
+    } else {
+      setSubmissions(getSubmissions());
+      syncWithGoogleSheet(false);
+    }
   };
 
   const pendingCount = submissions.filter((s) => s.status === 'รอตรวจ').length;
@@ -44,6 +90,11 @@ export default function App() {
     }
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // ดึงข้อมูลจาก Google Sheet อัตโนมัติเมื่อเข้าสู่หน้าตรวจงาน, ตรวจสอบสถานะ หรือ สรุปผล
+    if (tab === 'admin' || tab === 'status' || tab === 'dashboard') {
+      syncWithGoogleSheet(false);
+    }
   };
 
   const handleAdminAuthSuccess = () => {
@@ -51,6 +102,7 @@ export default function App() {
     setShowPasswordModal(false);
     setActiveTab('admin');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    syncWithGoogleSheet(true);
   };
 
   const handleAdminLogout = () => {
@@ -67,12 +119,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-100 via-sky-50 to-blue-50/80 text-slate-800 flex flex-col font-['Prompt',sans-serif] selection:bg-sky-500 selection:text-white">
-      {/* Top Navigation */}
+      {/* Top Navigation with Live Sync Status */}
       <Navbar
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         pendingCount={pendingCount}
         isAdminAuthenticated={isAdminAuthenticated}
+        isSyncing={isSyncing}
+        lastSyncTime={lastSyncTime}
+        onRefresh={() => syncWithGoogleSheet(true)}
       />
 
       {/* Main Container */}
@@ -89,7 +144,12 @@ export default function App() {
         )}
 
         {activeTab === 'status' && (
-          <StatusTab submissions={submissions} />
+          <StatusTab
+            submissions={submissions}
+            isSyncing={isSyncing}
+            lastSyncTime={lastSyncTime}
+            onRefresh={() => syncWithGoogleSheet(true)}
+          />
         )}
 
         {activeTab === 'admin' && (
@@ -97,6 +157,9 @@ export default function App() {
             submissions={submissions}
             onUpdate={refreshSubmissions}
             onLogout={handleAdminLogout}
+            isSyncing={isSyncing}
+            lastSyncTime={lastSyncTime}
+            onRefresh={() => syncWithGoogleSheet(true)}
           />
         )}
 
