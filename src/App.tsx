@@ -84,7 +84,13 @@ export default function App() {
     }
   };
 
-  const pendingCount = submissions.filter((s) => s.status === 'รอตรวจ').length;
+  const pendingCount = submissions.filter(
+    (s) =>
+      s.status === 'รอตรวจ' &&
+      !s.status.includes('ลบ') &&
+      !s.status.includes('ยกเลิก') &&
+      !s.adminFeedback?.includes('ลบรายการ')
+  ).length;
 
   const handleSelectTab = (tab: TabKey) => {
     if (tab === 'admin') {

@@ -126,6 +126,15 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   // Filter submissions
   const displayedSubmissions = useMemo(() => {
     return submissions.filter((sub) => {
+      // ไม่แสดงรายการที่ถูกลบหรือมีสถานะลบอย่างเด็ดขาด
+      if (
+        sub.status.includes('ลบ') ||
+        sub.status.includes('ยกเลิก') ||
+        sub.adminFeedback?.includes('ลบรายการ')
+      ) {
+        return false;
+      }
+
       // Rule: "เมื่อรายการใดได้รับการตรวจแล้ว ไม่ต้องขึ้นมาให้ตรวจอีก"
       if (viewMode === 'pending') {
         if (sub.status === 'ตรวจแล้ว') return false;
@@ -156,11 +165,23 @@ export const AdminTab: React.FC<AdminTabProps> = ({
 
   // Counts
   const pendingCount = useMemo(
-    () => submissions.filter((s) => s.status === 'รอตรวจ' || s.status === 'ส่งใหม่').length,
+    () =>
+      submissions.filter(
+        (s) =>
+          (s.status === 'รอตรวจ' || s.status === 'ส่งใหม่') &&
+          !s.status.includes('ลบ') &&
+          !s.status.includes('ยกเลิก')
+      ).length,
     [submissions]
   );
   const reviewedCount = useMemo(
-    () => submissions.filter((s) => s.status === 'ตรวจแล้ว').length,
+    () =>
+      submissions.filter(
+        (s) =>
+          s.status === 'ตรวจแล้ว' &&
+          !s.status.includes('ลบ') &&
+          !s.status.includes('ยกเลิก')
+      ).length,
     [submissions]
   );
 

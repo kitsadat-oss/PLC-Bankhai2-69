@@ -18,16 +18,26 @@ interface DashboardTabProps {
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({ submissions }) => {
+  // กรองรายการที่ถูกลบออกจากการคำนวณทั้งหมด
+  const activeSubmissions = useMemo(() => {
+    return submissions.filter(
+      (s) =>
+        !s.status.includes('ลบ') &&
+        !s.status.includes('ยกเลิก') &&
+        !s.adminFeedback?.includes('ลบรายการ')
+    );
+  }, [submissions]);
+
   // Aggregate statistics
   const stats = useMemo(() => {
-    const total = submissions.length;
-    const pending = submissions.filter((s) => s.status === 'รอตรวจ').length;
-    const approved = submissions.filter((s) => s.status === 'ตรวจแล้ว').length;
-    const resubmit = submissions.filter((s) => s.status === 'ส่งใหม่').length;
+    const total = activeSubmissions.length;
+    const pending = activeSubmissions.filter((s) => s.status === 'รอตรวจ').length;
+    const approved = activeSubmissions.filter((s) => s.status === 'ตรวจแล้ว').length;
+    const resubmit = activeSubmissions.filter((s) => s.status === 'ส่งใหม่').length;
 
     // Unique teachers and groups
-    const uniqueTeachers = new Set(submissions.map((s) => s.modelTeacher)).size;
-    const uniqueGroups = new Set(submissions.map((s) => s.groupName)).size;
+    const uniqueTeachers = new Set(activeSubmissions.map((s) => s.modelTeacher)).size;
+    const uniqueGroups = new Set(activeSubmissions.map((s) => s.groupName)).size;
 
     const completionRate = total > 0 ? Math.round((approved / total) * 100) : 0;
 
@@ -40,12 +50,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({ submissions }) => {
       uniqueGroups,
       completionRate,
     };
-  }, [submissions]);
+  }, [activeSubmissions]);
 
   // Breakdown by 10 Subject Groups (with distinct colors)
   const subjectBreakdown = useMemo(() => {
     return SUBJECT_METAS.map((meta) => {
-      const groupSubmissions = submissions.filter(
+      const groupSubmissions = activeSubmissions.filter(
         (s) =>
           s.subjectGroup === meta.name ||
           (meta.name.includes('คอมพิวเตอร์') && s.subjectGroup.includes('คอมพิวเตอร์'))

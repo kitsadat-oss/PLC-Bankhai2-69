@@ -49,13 +49,20 @@ export function isSampleOrTestData(item: PLCSubmission): boolean {
   const id = String(item.id || '').trim();
   const idUpper = id.toUpperCase();
   const status = String(item.status || '').trim();
-  const teacher = String(item.modelTeacher || '');
-  const topic = String(item.lsTopic || '');
-  const group = String(item.groupName || '');
-  const notes = String(item.notes || '');
+  const feedback = String(item.adminFeedback || '').trim();
+  const teacher = String(item.modelTeacher || '').trim();
+  const topic = String(item.lsTopic || '').trim();
+  const group = String(item.groupName || '').trim();
+  const notes = String(item.notes || '').trim();
 
-  // 1. ตรวจสอบว่ารายการนี้ถูกลบแล้วหรือไม่ (ทั้งจากสถานะใน Sheet และจาก local deleted set)
-  if (status === 'ลบแล้ว' || status === 'ลบ' || status === 'ยกเลิก') {
+  // 1. ตรวจสอบสถานะการลบ: หากสถานะมีคำว่า "ลบ", "ลบแล้ว", "ยกเลิก", "deleted" หรือข้อเสนอแนะระบุว่าลบ
+  if (
+    status.includes('ลบ') ||
+    status.includes('ยกเลิก') ||
+    status.toLowerCase().includes('delete') ||
+    feedback.includes('ลบรายการ') ||
+    notes.includes('ลบแล้ว')
+  ) {
     return true;
   }
   const deletedSet = getDeletedIds();
@@ -93,6 +100,8 @@ export function isSampleOrTestData(item: PLCSubmission): boolean {
 
   return false;
 }
+
+export const isDeletedOrTestData = isSampleOrTestData;
 
 export function getSubmissions(): PLCSubmission[] {
   try {
@@ -146,6 +155,17 @@ export function generateSubmissionId(): string {
   return `PLC-2569-${timeSlice}-${rand}`;
 }
 
+const recentInFlightSubmissions = new Map<string, { submission: PLCSubmission; timestamp: number }>();
+
+export function registerInFlightSubmission(submission: PLCSubmission): void {
+  if (submission && submission.id) {
+    recentInFlightSubmissions.set(submission.id.trim(), {
+      submission,
+      timestamp: Date.now(),
+    });
+  }
+}
+
 export function addSubmission(newSub: Omit<PLCSubmission, 'id' | 'status'> & { status?: SubmissionStatus }): PLCSubmission {
   const current = getSubmissions();
   const id = generateSubmissionId();
@@ -155,6 +175,8 @@ export function addSubmission(newSub: Omit<PLCSubmission, 'id' | 'status'> & { s
     id,
     status: newSub.status || 'รอตรวจ',
   };
+
+  registerInFlightSubmission(submission);
 
   const updated = [submission, ...current];
   saveSubmissions(updated);
@@ -689,9 +711,11 @@ export async function syncAllToGoogleSheet(
 
 /**
  * Intelligently merge remote Google Sheet data with local data:
- * - ซิงค์สถานะการตรวจจาก Google Sheet เสมอ (ตามเงื่อนไข: *แก้ไขให้ระบบซิงค์ข้อมูลสถานะการตรวจ จากข้อมูลใน Google Sheet เสมอ)
- * - หากมีรายการอยู่ใน Google Sheet ให้ยึดสถานะ (status), ข้อเสนอแนะ (adminFeedback), วันที่ตรวจ (reviewedAt), ลิงก์ Drive จาก Sheet เป็นหลัก
- * - คงไว้เฉพาะรายการใหม่ที่เพิ่งส่งในเครื่องนี้และยังรอเข้าสู่ Google Sheet (In-flight submissions)
+ * - Google Sheet คือฐานข้อมูลหลัก 100% (Single Source of Truth)
+ * - ซิงค์สถานะการตรวจจาก Google Sheet เสมอ (หากในชีตเป็น ตรวจแล้ว, รอตรวจ, ส่งใหม่ ให้ยึดตามชีต 100%)
+ * - หากรายการใดไม่มีใน Google Sheet แล้ว แสดงว่าถูกลบออกจากชีต -> ให้ลบออกจากเครื่องด้วย (ห้ามนำกลับมา)
+ * - หากรายการใดในชีตมีสถานะ "ลบ" / "ลบแล้ว" -> จะถูกคัดกรองทิ้งและไม่แสดงผล
+ * - ยกเว้นเฉพาะรายการที่เพิ่งกดส่งใหม่จากเครื่องนี้ไม่เกิน 90 วินาที (in-flight) ที่กำลังรอส่งเข้าชีต
  */
 export function mergeRemoteWithLocal(
   remoteData: PLCSubmission[],
@@ -701,44 +725,38 @@ export function mergeRemoteWithLocal(
   pendingStatusUpdates: PLCSubmission[];
 } {
   const cleanRemote = remoteData.filter((item) => !isSampleOrTestData(item));
-  const cleanLocal = localData.filter((item) => !isSampleOrTestData(item));
-
-  const localMap = new Map<string, PLCSubmission>();
-  cleanLocal.forEach((sub) => {
-    if (sub.id) localMap.set(sub.id.trim(), sub);
-  });
-
   const mergedMap = new Map<string, PLCSubmission>();
 
-  // 1. ซิงค์ข้อมูลสถานะการตรวจจาก Google Sheet เสมอ
+  // 1. Google Sheet คือฐานข้อมูลหลัก: นำข้อมูลทุกรายการจาก Google Sheet มาใช้งาน 100%
   for (const remote of cleanRemote) {
     const id = remote.id ? remote.id.trim() : '';
     if (!id) continue;
 
-    const local = localMap.get(id);
-    if (!local) {
-      mergedMap.set(id, remote);
-    } else {
-      // มีทั้งในเครื่องและใน Sheet: ยึดสถานะการตรวจจาก Google Sheet เสมอ
-      mergedMap.set(id, {
-        ...local,
-        ...remote,
-        status: remote.status || 'รอตรวจ',
-        adminFeedback: remote.adminFeedback || '',
-        reviewedAt: remote.reviewedAt || '',
-        reviewedBy: remote.reviewedAt ? (remote.reviewedBy || local.reviewedBy || 'Admin งานวิชาการ โรงเรียนบ้านค่าย') : '',
-        fileUrl: remote.fileUrl || local.fileUrl || '',
-      });
+    mergedMap.set(id, {
+      ...remote,
+      status: remote.status || 'รอตรวจ',
+      adminFeedback: remote.adminFeedback || '',
+      reviewedAt: remote.reviewedAt || '',
+      reviewedBy: remote.reviewedAt ? (remote.reviewedBy || 'Admin งานวิชาการ โรงเรียนบ้านค่าย') : '',
+      fileUrl: remote.fileUrl || '',
+    });
+
+    // หากรายการนี้ขึ้นไปบน Google Sheet เรียบร้อยแล้ว ให้นำออกจาก in-flight map
+    recentInFlightSubmissions.delete(id);
+  }
+
+  // 2. คงเฉพาะรายการที่เพิ่งส่งใหม่จากเครื่องนี้ในช่วงเวลาไม่เกิน 90 วินาที (In-flight submissions)
+  const now = Date.now();
+  for (const [inFlightId, item] of recentInFlightSubmissions.entries()) {
+    if (now - item.timestamp > 90000) {
+      recentInFlightSubmissions.delete(inFlightId);
+    } else if (!mergedMap.has(inFlightId) && !isSampleOrTestData(item.submission)) {
+      mergedMap.set(inFlightId, item.submission);
     }
   }
 
-  // 2. คงเฉพาะรายการที่เพิ่งส่งใหม่จากเครื่องนี้และกำลังรอเข้าสู่ Google Sheet (In-flight submissions)
-  for (const local of cleanLocal) {
-    const id = local.id ? local.id.trim() : '';
-    if (id && !mergedMap.has(id)) {
-      mergedMap.set(id, local);
-    }
-  }
+  // ข้อสำคัญ: ข้อมูลใดที่เคยอยู่ใน localData แต่ไม่มีใน Google Sheet และไม่ได้เพิ่งกดส่งใน 90 วินาที
+  // แสดงว่าถูกลบออกจาก Google Sheet แล้ว -> จะถูกตัดทิ้งโดยอัตโนมัติ ทำให้ข้อมูลตรงกับ Google Sheet ทันที!
 
   return {
     merged: Array.from(mergedMap.values()),

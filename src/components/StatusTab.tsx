@@ -84,6 +84,14 @@ export const StatusTab: React.FC<StatusTabProps> = ({
 
   const filteredSubmissions = useMemo(() => {
     return submissions.filter((sub) => {
+      // ไม่แสดงรายการที่ถูกลบหรือมีสถานะลบอย่างเด็ดขาด
+      if (
+        sub.status.includes('ลบ') ||
+        sub.status.includes('ยกเลิก') ||
+        sub.adminFeedback?.includes('ลบรายการ')
+      ) {
+        return false;
+      }
       // Status filter
       if (selectedStatus !== 'ทั้งหมด' && sub.status !== selectedStatus) {
         return false;
@@ -107,13 +115,19 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     });
   }, [submissions, selectedStatus, selectedSubject, searchTerm]);
 
-  // Status counts
+  // Status counts (ไม่นับรวมรายการที่ถูกลบ)
   const counts = useMemo(() => {
+    const valid = submissions.filter(
+      (s) =>
+        !s.status.includes('ลบ') &&
+        !s.status.includes('ยกเลิก') &&
+        !s.adminFeedback?.includes('ลบรายการ')
+    );
     return {
-      all: submissions.length,
-      pending: submissions.filter((s) => s.status === 'รอตรวจ').length,
-      approved: submissions.filter((s) => s.status === 'ตรวจแล้ว').length,
-      resubmit: submissions.filter((s) => s.status === 'ส่งใหม่').length,
+      all: valid.length,
+      pending: valid.filter((s) => s.status === 'รอตรวจ').length,
+      approved: valid.filter((s) => s.status === 'ตรวจแล้ว').length,
+      resubmit: valid.filter((s) => s.status === 'ส่งใหม่').length,
     };
   }, [submissions]);
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   FileUp,
   ClipboardCheck,
@@ -17,10 +17,20 @@ interface HomeTabProps {
 }
 
 export const HomeTab: React.FC<HomeTabProps> = ({ onNavigate, submissions }) => {
-  const total = submissions.length;
-  const approved = submissions.filter((s) => s.status === 'ตรวจแล้ว').length;
-  const pending = submissions.filter((s) => s.status === 'รอตรวจ').length;
-  const resubmit = submissions.filter((s) => s.status === 'ส่งใหม่').length;
+  const activeSubmissions = useMemo(
+    () =>
+      submissions.filter(
+        (s: PLCSubmission) =>
+          !s.status.includes('ลบ') &&
+          !s.status.includes('ยกเลิก') &&
+          !s.adminFeedback?.includes('ลบรายการ')
+      ),
+    [submissions]
+  );
+  const total = activeSubmissions.length;
+  const approved = activeSubmissions.filter((s: PLCSubmission) => s.status === 'ตรวจแล้ว').length;
+  const pending = activeSubmissions.filter((s: PLCSubmission) => s.status === 'รอตรวจ').length;
+  const resubmit = activeSubmissions.filter((s: PLCSubmission) => s.status === 'ส่งใหม่').length;
 
   return (
     <div className="space-y-8 animate-fadeIn">
