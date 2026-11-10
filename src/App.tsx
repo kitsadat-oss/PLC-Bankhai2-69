@@ -15,12 +15,9 @@ import { PLCSubmission } from './types/plc';
 import {
   getSubmissions,
   saveSubmissions,
-  clearAllSubmissions,
   fetchFromGoogleSheet,
   mergeRemoteWithLocal,
-  updateSubmissionStatusInGoogleSheet,
 } from './services/storage';
-import { Trash2 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
@@ -30,14 +27,14 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-  // ดึงข้อมูลอัตโนมัติจาก Google Sheet (Live Cloud Sync) พร้อมผสานข้อมูลป้องกันสถานะดีดกลับ
+  // ดึงข้อมูลอัตโนมัติจาก Google Sheet (Live Cloud Sync) โดยยึดสถานะการตรวจจาก Google Sheet เสมอ
   const syncWithGoogleSheet = async (showLoading = true) => {
     if (showLoading) setIsSyncing(true);
     try {
       const remoteData = await fetchFromGoogleSheet();
       if (remoteData && Array.isArray(remoteData)) {
         const currentLocal = getSubmissions();
-        const { merged, pendingStatusUpdates } = mergeRemoteWithLocal(remoteData, currentLocal);
+        const { merged } = mergeRemoteWithLocal(remoteData, currentLocal);
 
         saveSubmissions(merged);
         setSubmissions(merged);
@@ -45,16 +42,6 @@ export default function App() {
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} น.`;
         setLastSyncTime(timeStr);
-
-        // หากมีรายการที่ตรวจแล้วในเครื่องแต่ใน Google Sheet ยังไม่ได้รับ ให้ส่งอัปเดตไป Google Sheet ทันที
-        if (pendingStatusUpdates.length > 0) {
-          console.log(`Auto-healing: pushing ${pendingStatusUpdates.length} reviewed items to Google Sheet...`);
-          for (const item of pendingStatusUpdates) {
-            updateSubmissionStatusInGoogleSheet(item).catch((err) =>
-              console.warn('Background status sync error:', err)
-            );
-          }
-        }
       }
     } catch (err) {
       console.warn('Auto-sync with Google Sheet failed:', err);
@@ -63,10 +50,28 @@ export default function App() {
     }
   };
 
-  // โหลดข้อมูลแคชทันที และดึงข้อมูลสดจาก Google Sheet อัตโนมัติตั้งแต่เปิดเว็บ
+  // โหลดข้อมูลแคชทันที และดึงข้อมูลสดจาก Google Sheet อัตโนมัติตั้งแต่เปิดเว็บ พร้อมตั้งเวลาซิงค์ทุก ๆ 5 นาที
   useEffect(() => {
     setSubmissions(getSubmissions());
     syncWithGoogleSheet(true);
+
+    // Auto ซิงค์ข้อมูลในระบบและ Google Sheet ทุก ๆ 5 นาที (300,000 มิลลิวินาที) เพื่อให้ข้อมูลตรงกันระหว่าง User
+    const intervalId = setInterval(() => {
+      syncWithGoogleSheet(false);
+    }, 5 * 60 * 1000);
+
+    // ตรวจสอบซิงค์ข้อมูลสดทันทีเมื่อสลับกลับมาที่หน้าแท็บเบราว์เซอร์
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithGoogleSheet(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const refreshSubmissions = (overrideData?: PLCSubmission[]) => {
@@ -108,13 +113,6 @@ export default function App() {
   const handleAdminLogout = () => {
     setIsAdminAuthenticated(false);
     setActiveTab('home');
-  };
-
-  const handleClearData = () => {
-    if (window.confirm('คุณต้องการล้างข้อมูลบันทึกทั้งหมดในเครื่องเพื่อเริ่มต้นใช้งานจริงหรือไม่?')) {
-      const cleared = clearAllSubmissions();
-      setSubmissions(cleared);
-    }
   };
 
   return (
@@ -194,15 +192,9 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-xs font-medium">
-            <button
-              onClick={handleClearData}
-              className="text-slate-400 hover:text-rose-600 flex items-center gap-1.5 cursor-pointer transition"
-              title="ล้างข้อมูลในระบบเพื่อเตรียมพร้อมใช้งานจริง"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>ล้างข้อมูลในระบบ</span>
-            </button>
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>เชื่อมต่อ Google Sheet • Auto-sync ทุก 5 นาที</span>
           </div>
         </div>
       </footer>

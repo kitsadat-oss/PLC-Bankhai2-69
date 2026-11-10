@@ -12,30 +12,70 @@ export const GOOGLE_DRIVE_FOLDER_ID = '1X9O0ELOl-aBuc7n6L9AJJj3jxcoEGMUs';
 export const GOOGLE_DRIVE_FOLDER_URL =
   'https://drive.google.com/drive/folders/1X9O0ELOl-aBuc7n6L9AJJj3jxcoEGMUs?usp=drive_link';
 
+const DELETED_IDS_KEY = 'bankhai_plc_deleted_ids_v1';
+
+export function getDeletedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        return new Set(arr.map((id) => String(id).trim()));
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return new Set();
+}
+
+export function markIdAsDeleted(id: string): void {
+  try {
+    const cleanId = String(id || '').trim();
+    if (!cleanId) return;
+    const set = getDeletedIds();
+    set.add(cleanId);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    // ignore
+  }
+}
+
 /**
- * Helper to check whether an item is sample, test, or debug data
+ * Helper to check whether an item is sample, test, debug, or deleted data
  */
 export function isSampleOrTestData(item: PLCSubmission): boolean {
   if (!item) return true;
-  const id = String(item.id || '').toUpperCase();
+  const id = String(item.id || '').trim();
+  const idUpper = id.toUpperCase();
+  const status = String(item.status || '').trim();
   const teacher = String(item.modelTeacher || '');
   const topic = String(item.lsTopic || '');
   const group = String(item.groupName || '');
   const notes = String(item.notes || '');
 
-  // Check test/debug IDs
+  // 1. ตรวจสอบว่ารายการนี้ถูกลบแล้วหรือไม่ (ทั้งจากสถานะใน Sheet และจาก local deleted set)
+  if (status === 'ลบแล้ว' || status === 'ลบ' || status === 'ยกเลิก') {
+    return true;
+  }
+  const deletedSet = getDeletedIds();
+  if (id && deletedSet.has(id)) {
+    return true;
+  }
+
+  // 2. ตรวจสอบรหัสทดสอบ / ดีบัก
   if (
-    id.includes('DEBUG') ||
-    id.includes('BATCH') ||
-    id.includes('TEST') ||
-    id.startsWith('SAMPLE') ||
+    idUpper.includes('DEBUG') ||
+    idUpper.includes('BATCH') ||
+    idUpper.includes('TEST') ||
+    idUpper.startsWith('SAMPLE') ||
     id === 'PLC-2569-001' ||
     id === 'PLC-2569-002'
   ) {
     return true;
   }
 
-  // Check sample names or test text
+  // 3. ตรวจสอบชื่อตัวอย่างเดิม
   if (
     teacher.includes('สมชาย มีสุข') ||
     teacher.includes('ณิชารัตน์ เจริญพร') ||
@@ -100,17 +140,10 @@ export function clearAllSubmissions(): PLCSubmission[] {
 }
 
 export function generateSubmissionId(): string {
-  // สร้างรหัสส่งงานที่ไม่ซ้ำกันแน่นอน แม้ส่งงานพร้อมกันหลายเครื่องในเสี้ยววินาที (Timestamp 6 หลัก)
+  // สร้างรหัสส่งงานที่ไม่ซ้ำกันแน่นอน แม้ส่งงานพร้อมกันหลายเครื่องในเสี้ยววินาทีเดียวกัน (Timestamp 6 หลัก + ตัวเลขสุ่ม 3 หลัก)
   const timeSlice = Date.now().toString().slice(-6);
-  const current = getSubmissions();
-  let id = `PLC-2569-${timeSlice}`;
-  
-  // หากมีรหัสนี้ซ้ำอยู่ในเครื่อง ให้เติมเลขสุ่ม 2 หลักเพื่อป้องกันการชนกัน 100%
-  if (current.some((item) => item.id === id)) {
-    const rand = Math.floor(Math.random() * 90 + 10).toString();
-    id = `PLC-2569-${timeSlice}-${rand}`;
-  }
-  return id;
+  const rand = Math.floor(Math.random() * 900 + 100).toString();
+  return `PLC-2569-${timeSlice}-${rand}`;
 }
 
 export function addSubmission(newSub: Omit<PLCSubmission, 'id' | 'status'> & { status?: SubmissionStatus }): PLCSubmission {
@@ -656,10 +689,9 @@ export async function syncAllToGoogleSheet(
 
 /**
  * Intelligently merge remote Google Sheet data with local data:
- * - If local has a review status ('ตรวจแล้ว' หรือ 'ส่งใหม่') with reviewedAt,
- *   while remote is still 'รอตรวจ', PRESERVE the local review so it NEVER reverts to 'รอตรวจ'!
- * - Returns pendingStatusUpdates so caller can sync them to Google Sheet in background.
- * - Preserves locally added items that haven't reached remote yet.
+ * - ซิงค์สถานะการตรวจจาก Google Sheet เสมอ (ตามเงื่อนไข: *แก้ไขให้ระบบซิงค์ข้อมูลสถานะการตรวจ จากข้อมูลใน Google Sheet เสมอ)
+ * - หากมีรายการอยู่ใน Google Sheet ให้ยึดสถานะ (status), ข้อเสนอแนะ (adminFeedback), วันที่ตรวจ (reviewedAt), ลิงก์ Drive จาก Sheet เป็นหลัก
+ * - คงไว้เฉพาะรายการใหม่ที่เพิ่งส่งในเครื่องนี้และยังรอเข้าสู่ Google Sheet (In-flight submissions)
  */
 export function mergeRemoteWithLocal(
   remoteData: PLCSubmission[],
@@ -676,10 +708,9 @@ export function mergeRemoteWithLocal(
     if (sub.id) localMap.set(sub.id.trim(), sub);
   });
 
-  const pendingStatusUpdates: PLCSubmission[] = [];
   const mergedMap = new Map<string, PLCSubmission>();
 
-  // 1. Process remote items
+  // 1. ซิงค์ข้อมูลสถานะการตรวจจาก Google Sheet เสมอ
   for (const remote of cleanRemote) {
     const id = remote.id ? remote.id.trim() : '';
     if (!id) continue;
@@ -687,36 +718,21 @@ export function mergeRemoteWithLocal(
     const local = localMap.get(id);
     if (!local) {
       mergedMap.set(id, remote);
-      continue;
-    }
-
-    const localHasReview = local.status === 'ตรวจแล้ว' || local.status === 'ส่งใหม่';
-    const remoteHasReview = remote.status === 'ตรวจแล้ว' || remote.status === 'ส่งใหม่';
-
-    if (localHasReview && !remoteHasReview) {
-      // Local is reviewed, but remote still says 'รอตรวจ'
-      // DO NOT revert to 'รอตรวจ'! Keep the review and queue sync to Google Sheet
-      const preservedItem: PLCSubmission = {
-        ...remote,
-        status: local.status,
-        adminFeedback: local.adminFeedback || remote.adminFeedback || '',
-        reviewedAt: local.reviewedAt || remote.reviewedAt || '',
-        reviewedBy: local.reviewedBy || remote.reviewedBy || 'Admin งานวิชาการ โรงเรียนบ้านค่าย',
-      };
-      mergedMap.set(id, preservedItem);
-      pendingStatusUpdates.push(preservedItem);
     } else {
-      // Remote also reviewed or neither reviewed: merge with priority to remote fileUrl, but preserve local edits
+      // มีทั้งในเครื่องและใน Sheet: ยึดสถานะการตรวจจาก Google Sheet เสมอ
       mergedMap.set(id, {
         ...local,
         ...remote,
-        adminFeedback: remote.adminFeedback || local.adminFeedback || '',
-        reviewedAt: remote.reviewedAt || local.reviewedAt || '',
+        status: remote.status || 'รอตรวจ',
+        adminFeedback: remote.adminFeedback || '',
+        reviewedAt: remote.reviewedAt || '',
+        reviewedBy: remote.reviewedAt ? (remote.reviewedBy || local.reviewedBy || 'Admin งานวิชาการ โรงเรียนบ้านค่าย') : '',
+        fileUrl: remote.fileUrl || local.fileUrl || '',
       });
     }
   }
 
-  // 2. Include local items not present in remote (offline submissions / newly submitted)
+  // 2. คงเฉพาะรายการที่เพิ่งส่งใหม่จากเครื่องนี้และกำลังรอเข้าสู่ Google Sheet (In-flight submissions)
   for (const local of cleanLocal) {
     const id = local.id ? local.id.trim() : '';
     if (id && !mergedMap.has(id)) {
@@ -726,7 +742,7 @@ export function mergeRemoteWithLocal(
 
   return {
     merged: Array.from(mergedMap.values()),
-    pendingStatusUpdates,
+    pendingStatusUpdates: [],
   };
 }
 
@@ -1092,16 +1108,27 @@ function doPost(e) {
 }
 
 /**
- * Delete a submission from Google Sheet
+ * Delete a submission from Google Sheet.
+ * 1. Mark id as deleted in persistent storage so it will never reappear locally or across tabs.
+ * 2. Try action: 'delete' (physical row deletion via Apps Script).
+ * 3. If Apps Script returns 'invalid_action' or fails, fallback to action: 'update_status'
+ *    with status: 'ลบแล้ว' which immediately updates column 8 in Google Sheet.
  */
 export async function deleteSubmissionFromGoogleSheet(
   id: string,
   customUrl?: string
 ): Promise<{ success: boolean; message?: string }> {
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return { success: false, message: 'ไม่พบรหัสงาน' };
+
+  // 1. บันทึกลง local set ทันทีว่ารายการนี้ถูกลบแล้ว จะไม่มีวันดีดกลับมาแสดงผลอีก
+  markIdAsDeleted(cleanId);
+
   const url = customUrl || getWebhookUrl();
-  if (!url) return { success: false, message: 'ยังไม่ได้ระบุ Web App URL' };
+  if (!url) return { success: true, message: 'ลบข้อมูลในระบบเรียบร้อย' };
 
   try {
+    // 2. ลองส่งคำสั่ง delete ไปยัง Apps Script
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -1109,21 +1136,55 @@ export async function deleteSubmissionFromGoogleSheet(
       },
       body: JSON.stringify({
         action: 'delete',
-        id,
-        data: { id },
+        id: cleanId,
+        data: { id: cleanId },
       }),
     });
+
     if (res.ok) {
       try {
         const json = await res.json();
-        return { success: json.status === 'success', message: json.message };
+        if (json.status === 'success') {
+          return { success: true, message: json.message || 'ลบรายการออกจาก Google Sheet เรียบร้อยแล้ว' };
+        } else if (json.status === 'invalid_action') {
+          // หาก Apps Script ของผู้ใช้เป็นเวอร์ชันเดิมที่ยังไม่มี delete ให้ปรับสถานะในชีตเป็น 'ลบแล้ว' ผ่าน update_status
+          console.warn(`Apps Script does not support 'delete' action yet, updating status to 'ลบแล้ว' for ${cleanId}`);
+          return await updateSubmissionStatusInGoogleSheet(
+            {
+              id: cleanId,
+              status: 'ลบแล้ว',
+              adminFeedback: '[ลบรายการออกจากระบบแล้ว]',
+              reviewedAt: new Date().toLocaleString('th-TH'),
+            },
+            url
+          );
+        }
       } catch {
         return { success: true, message: 'ส่งคำขอลบรายการเรียบร้อย' };
       }
     }
-    return { success: false, message: `HTTP Error ${res.status}` };
+
+    // Fallback: หากคำสั่ง delete ส่งไม่สำเร็จ ให้บันทึกสถานะเป็น 'ลบแล้ว' ผ่าน update_status
+    return await updateSubmissionStatusInGoogleSheet(
+      {
+        id: cleanId,
+        status: 'ลบแล้ว',
+        adminFeedback: '[ลบรายการออกจากระบบแล้ว]',
+        reviewedAt: new Date().toLocaleString('th-TH'),
+      },
+      url
+    );
   } catch (err: any) {
-    return { success: false, message: err?.message || 'ส่งคำขอลบไม่สำเร็จ' };
+    console.warn('deleteSubmissionFromGoogleSheet error, falling back to update_status:', err);
+    return await updateSubmissionStatusInGoogleSheet(
+      {
+        id: cleanId,
+        status: 'ลบแล้ว',
+        adminFeedback: '[ลบรายการออกจากระบบแล้ว]',
+        reviewedAt: new Date().toLocaleString('th-TH'),
+      },
+      url
+    );
   }
 }
 

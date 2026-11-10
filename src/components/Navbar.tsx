@@ -143,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 onClick={onRefresh}
                 disabled={isSyncing}
-                title={lastSyncTime ? `ดึงข้อมูลล่าสุดจาก Google Sheet (ซิงค์ล่าสุด: ${lastSyncTime})` : 'ดึงข้อมูลล่าสุดจาก Google Sheet'}
+                title={lastSyncTime ? `ดึงข้อมูลล่าสุดจาก Google Sheet (ซิงค์ล่าสุด: ${lastSyncTime} • ระบบ Auto-sync อัตโนมัติทุก 5 นาที)` : 'ดึงข้อมูลล่าสุดจาก Google Sheet (ระบบ Auto-sync อัตโนมัติทุก 5 นาที)'}
                 className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition cursor-pointer disabled:opacity-60 shadow-xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />

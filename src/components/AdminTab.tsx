@@ -279,10 +279,16 @@ export const AdminTab: React.FC<AdminTabProps> = ({
         }
       }
 
-      // 3. หากมีรายการที่ถูกลบ ให้ลบออกจาก Google Sheet
+      // 3. หากมีรายการที่ถูกลบ ให้ส่งคำขอลบไปยัง Google Sheet และรอผลลัพธ์
       if (deletedIds.length > 0) {
-        for (const delId of deletedIds) {
-          deleteSubmissionFromGoogleSheet(delId).catch(console.warn);
+        const deleteResults = await Promise.allSettled(
+          deletedIds.map((delId) => deleteSubmissionFromGoogleSheet(delId))
+        );
+        const delSuccess = deleteResults.filter(
+          (r) => r.status === 'fulfilled' && r.value.success
+        ).length;
+        if (delSuccess > 0) {
+          sheetStatusDetail += ` • ซิงค์การลบลง Google Sheet แล้ว (${delSuccess}/${deletedIds.length} รายการ)`;
         }
       }
 
